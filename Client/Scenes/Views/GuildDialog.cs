@@ -1193,22 +1193,30 @@ namespace Client.Scenes.Views
 
         private int GetCurrentLine()
         {
+#if WINDOWS
             return SendMessage(NoticeTextBox.TextBox.Handle, EM_GETFIRSTVISIBLELINE, 0, 0);
+#else
+            return 0;
+#endif
         }
 
         const int EM_GETFIRSTVISIBLELINE = 0x00CE;
         const int EM_LINESCROLL = 0x00B6;
 
+#if WINDOWS
         [DllImport("user32.dll")]
         static extern int SendMessage(IntPtr hWnd, int wMsg, int wParam, int lParam);
+#endif
 
         private void SetLineIndex(int lineIndex)
         {
+#if WINDOWS
             int line = GetCurrentLine();
             if (line == lineIndex) return;
 
             SendMessage(NoticeTextBox.TextBox.Handle, EM_LINESCROLL, 0, lineIndex - GetCurrentLine());
             NoticeTextBox.DisposeTexture();
+#endif
         }
 
         #endregion

@@ -182,11 +182,12 @@ namespace Client.Rendering.SDL3OpenGL
                         {
                             var btn = MapMouseButton(e.button.button);
                             var args = new MouseEventArgs(btn, 0, (int)e.button.x, (int)e.button.y, 0);
-                            try { DXControl.ActiveScene?.OnMouseUp(args); }
+                            // Send Click BEFORE MouseUp, because MouseUp clears FocusControl
+                            // and the scene's OnMouseClick checks MouseControl == FocusControl
+                            try { DXControl.ActiveScene?.OnMouseClick(args); }
                             catch (Exception ex) { CEnvir.SaveException(ex); }
 
-                            // Also send Click
-                            try { DXControl.ActiveScene?.OnMouseClick(args); }
+                            try { DXControl.ActiveScene?.OnMouseUp(args); }
                             catch (Exception ex) { CEnvir.SaveException(ex); }
                             break;
                         }
@@ -205,9 +206,9 @@ namespace Client.Rendering.SDL3OpenGL
                         {
                             var key = MapKey(e.key.scancode);
                             Keys mods = Keys.None;
-                            if ((e.key.mod & 0x0003) != 0) mods |= Keys.Shift; // KMOD_SHIFT
-                            if ((e.key.mod & 0x00C0) != 0) mods |= Keys.Control; // KMOD_CTRL
-                            if ((e.key.mod & 0x0300) != 0) mods |= Keys.Alt; // KMOD_ALT
+                            if ((e.key.mod & 0x0003) != 0) mods |= Keys.Shift;
+                            if ((e.key.mod & 0x00C0) != 0) mods |= Keys.Control;
+                            if ((e.key.mod & 0x0300) != 0) mods |= Keys.Alt;
 
                             CEnvir.Shift = (mods & Keys.Shift) != 0;
                             CEnvir.Ctrl = (mods & Keys.Control) != 0;
@@ -215,11 +216,18 @@ namespace Client.Rendering.SDL3OpenGL
 
                             var args = new KeyEventArgs(key | mods);
 
-                            // Alt+Enter toggles fullscreen
                             if (CEnvir.Alt && args.KeyCode == Keys.Enter)
                             {
                                 ToggleFullScreen();
                                 break;
+                            }
+
+                            // Route to active TextBox first
+                            var activeTextBox = DXTextBox.ActiveTextBox;
+                            if (activeTextBox?.TextBox != null)
+                            {
+                                activeTextBox.TextBox.OnKeyDownPublic(args);
+                                if (args.Handled) break;
                             }
 
                             try { DXControl.ActiveScene?.OnKeyDown(args); }
@@ -247,6 +255,26 @@ namespace Client.Rendering.SDL3OpenGL
 
                         case SDL.SDL_EVENT_TEXT_INPUT:
                         {
+                            // Route text input to active TextBox first
+                            var activeTextBox2 = DXTextBox.ActiveTextBox;
+                            if (activeTextBox2?.TextBox != null)
+                            {
+                                unsafe
+                                {
+                                    string inputText = Marshal.PtrToStringUTF8((IntPtr)e.text.text);
+                                    if (!string.IsNullOrEmpty(inputText))
+                                    {
+                                        foreach (char c in inputText)
+                                        {
+                                            var kpe = new KeyPressEventArgs(c);
+                                            activeTextBox2.TextBox.OnKeyPressPublic(kpe);
+                                        }
+                                        activeTextBox2.TextureValid = false;
+                                    }
+                                }
+                                break;
+                            }
+
                             unsafe
                             {
                                 string text = Marshal.PtrToStringUTF8((IntPtr)e.text.text);

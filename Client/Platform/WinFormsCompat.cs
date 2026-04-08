@@ -242,6 +242,14 @@ namespace System.Windows.Forms
             return new Size(text.Length * charWidth, lineHeight);
         }
 
+        // Overload for DrawToBitmap: renders directly onto a Bitmap's pixel buffer
+        public static void DrawText(object graphicsObj, string text, object fontObj, Rectangle bounds, Color color, TextFormatFlags flags, Bitmap targetBitmap)
+        {
+            if (string.IsNullOrEmpty(text) || targetBitmap?.PixelBuffer == IntPtr.Zero) return;
+            var fakeGraphics = new Graphics { SourceBitmap = targetBitmap };
+            DrawText(fakeGraphics, text, fontObj, bounds, color, flags);
+        }
+
         public static unsafe void DrawText(object graphicsObj, string text, object fontObj, Rectangle bounds, Color color, TextFormatFlags flags)
         {
             if (string.IsNullOrEmpty(text)) return;
@@ -446,16 +454,39 @@ namespace System.Windows.Forms
         public object Cursor { get; set; }
         public bool IsDisposed => _disposed;
 
-        public void DrawToBitmap(Bitmap bitmap, Rectangle targetBounds) { }
+        public void DrawToBitmap(Bitmap bitmap, Rectangle targetBounds)
+        {
+            if (bitmap?.PixelBuffer == IntPtr.Zero || string.IsNullOrEmpty(Text)) return;
+            string displayText = UseSystemPasswordChar ? new string('*', Text.Length) : Text;
+            var font = Font as System.Drawing.Font ?? new System.Drawing.Font("Liberation Sans", 9f);
+            TextRenderer.DrawText(null, displayText, font,
+                new Rectangle(2, 0, targetBounds.Width, targetBounds.Height),
+                ForeColor.IsEmpty ? Color.White : ForeColor,
+                TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.NoPadding,
+                bitmap);
+        }
         public void SuspendLayout() { }
         public void ResumeLayout() { }
 
         public void SelectAll() { SelectionStart = 0; SelectionLength = Text?.Length ?? 0; }
-        public void Focus() { }
+        public void Focus() { GotFocus?.Invoke(this, EventArgs.Empty); }
         public void Select(int start, int length) { SelectionStart = start; SelectionLength = length; }
-        public void Paste(string text) { }
-        public void Cut() { }
-        public void Copy() { }
+        public void Paste(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return;
+            int pos = SelectionStart;
+            string t = Text ?? "";
+            if (SelectionLength > 0)
+                t = t.Remove(pos, Math.Min(SelectionLength, t.Length - pos));
+            t = t.Insert(pos, text);
+            if (t.Length > MaxLength) t = t.Substring(0, MaxLength);
+            Text = t;
+            SelectionStart = Math.Min(pos + text.Length, Text.Length);
+            SelectionLength = 0;
+            OnTextChanged(EventArgs.Empty);
+        }
+        public void Cut() { Copy(); if (SelectionLength > 0) { Text = Text.Remove(SelectionStart, SelectionLength); SelectionLength = 0; OnTextChanged(EventArgs.Empty); } }
+        public void Copy() { if (SelectionLength > 0) Clipboard.SetText(Text.Substring(SelectionStart, SelectionLength)); }
         public void Undo() { }
         public int GetLineFromCharIndex(int index) => 0;
         public int GetFirstCharIndexFromLine(int line) => 0;
@@ -466,14 +497,112 @@ namespace System.Windows.Forms
         protected virtual void OnMouseUp(MouseEventArgs e) { }
         protected virtual void OnMouseMove(MouseEventArgs e) { }
         protected virtual void OnPreviewKeyDown(PreviewKeyDownEventArgs e) { }
-        protected virtual void OnKeyDown(KeyEventArgs e) { }
-        protected virtual void OnKeyUp(KeyEventArgs e) { }
-        protected virtual void OnKeyPress(KeyPressEventArgs e) { }
+        protected virtual void OnKeyDown(KeyEventArgs e)
+        {
+            KeyDown?.Invoke(this, e);
+            if (e.Handled || ReadOnly) return;
+
+            string t = Text ?? "";
+            int pos = Math.Min(SelectionStart, t.Length);
+
+            switch (e.KeyCode)
+            {
+                case Keys.Back:
+                    if (SelectionLength > 0)
+                    {
+                        t = t.Remove(pos, Math.Min(SelectionLength, t.Length - pos));
+                        SelectionLength = 0;
+                    }
+                    else if (pos > 0)
+                    {
+                        t = t.Remove(pos - 1, 1);
+                        pos--;
+                    }
+                    Text = t; SelectionStart = pos;
+                    OnTextChanged(EventArgs.Empty);
+                    break;
+
+                case Keys.Delete:
+                    if (SelectionLength > 0)
+                    {
+                        t = t.Remove(pos, Math.Min(SelectionLength, t.Length - pos));
+                        SelectionLength = 0;
+                    }
+                    else if (pos < t.Length)
+                    {
+                        t = t.Remove(pos, 1);
+                    }
+                    Text = t; SelectionStart = pos;
+                    OnTextChanged(EventArgs.Empty);
+                    break;
+
+                case Keys.Left:
+                    if (pos > 0) SelectionStart = pos - 1;
+                    SelectionLength = 0;
+                    break;
+
+                case Keys.Right:
+                    if (pos < t.Length) SelectionStart = pos + 1;
+                    SelectionLength = 0;
+                    break;
+
+                case Keys.Home:
+                    SelectionStart = 0; SelectionLength = 0;
+                    break;
+
+                case Keys.End:
+                    SelectionStart = t.Length; SelectionLength = 0;
+                    break;
+
+                case Keys.A:
+                    if (e.Control) { SelectionStart = 0; SelectionLength = t.Length; }
+                    break;
+
+                case Keys.C:
+                    if (e.Control) Copy();
+                    break;
+
+                case Keys.V:
+                    if (e.Control) { Paste(Clipboard.GetText()); }
+                    break;
+
+                case Keys.X:
+                    if (e.Control) Cut();
+                    break;
+            }
+        }
+        protected virtual void OnKeyUp(KeyEventArgs e) { KeyUp?.Invoke(this, e); }
+        protected virtual void OnKeyPress(KeyPressEventArgs e)
+        {
+            KeyPress?.Invoke(this, e);
+            if (e.Handled || ReadOnly) return;
+
+            char c = e.KeyChar;
+            if (c < ' ' || c == 127) return; // Ignore control characters
+
+            string t = Text ?? "";
+            int pos = Math.Min(SelectionStart, t.Length);
+
+            if (SelectionLength > 0)
+                t = t.Remove(pos, Math.Min(SelectionLength, t.Length - pos));
+
+            t = t.Insert(pos, c.ToString());
+            if (t.Length > MaxLength) return;
+
+            Text = t;
+            SelectionStart = pos + 1;
+            SelectionLength = 0;
+            OnTextChanged(EventArgs.Empty);
+        }
         protected virtual void OnTextChanged(EventArgs e) { TextChanged?.Invoke(this, e); }
         protected virtual void OnSizeChanged(EventArgs e) { }
         protected virtual void OnGotFocus(EventArgs e) { GotFocus?.Invoke(this, e); }
         protected virtual void OnLostFocus(EventArgs e) { LostFocus?.Invoke(this, e); }
         protected virtual void Dispose(bool disposing) { }
+
+        // Public wrappers for dispatching from SDL3 event loop
+        public void OnKeyDownPublic(KeyEventArgs e) => OnKeyDown(e);
+        public void OnKeyPressPublic(KeyPressEventArgs e) => OnKeyPress(e);
 
         public event EventHandler TextChanged;
         public event EventHandler GotFocus;
@@ -572,7 +701,7 @@ namespace System.Drawing
         public int TextContrast { get; set; }
 
         /// <summary>The Bitmap this Graphics was created from (if any).</summary>
-        public Bitmap SourceBitmap { get; private set; }
+        public Bitmap SourceBitmap { get; set; }
 
         public static Graphics FromImage(Image image)
         {

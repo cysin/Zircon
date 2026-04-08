@@ -358,7 +358,12 @@ namespace Client.Controls
 
         protected internal override void UpdateDisplayArea()
         {
-            Rectangle area = new Rectangle(Location, TextBox.Size);
+            // Use TextBox.Size if available, otherwise fall back to base.Size
+            Size s = TextBox?.Size ?? base.Size;
+            if (s.Width == 0 && s.Height == 0)
+                s = base.Size;
+
+            Rectangle area = new Rectangle(Location, s);
 
             if (Parent != null)
                 area.Offset(Parent.DisplayArea.Location);
@@ -367,8 +372,10 @@ namespace Client.Controls
         }
 
 
+#if WINDOWS
         [DllImport("user32.dll")]
         static extern IntPtr SendMessage(IntPtr hWnd, int Msg, int wParam, int lParam);
+#endif
 
         public override void OnMouseDown(MouseEventArgs e)
         {
@@ -376,6 +383,7 @@ namespace Client.Controls
 
             if (!TextBox.Visible) return;
 
+#if WINDOWS
             int location = (e.X - DisplayArea.X) | (e.Y - DisplayArea.Y) << 16;
 
             switch (e.Button)
@@ -387,17 +395,19 @@ namespace Client.Controls
                     SendMessage(TextBox.Handle, 0xA4, e.Clicks, location);
                     break;
             }
+#endif
         }
         public override void OnMouseMove(MouseEventArgs e)
         {
             base.OnMouseMove(e);
 
+#if WINDOWS
             if (CEnvir.Target.ActiveControl == TextBox) return;
 
             int location = (e.X - DisplayArea.X) | (e.Y - DisplayArea.Y) << 16;
 
-
             SendMessage(TextBox.Handle, 0x200, e.Clicks, location);
+#endif
         }
         public override void OnMouseUp(MouseEventArgs e)
         {
@@ -405,7 +415,7 @@ namespace Client.Controls
 
             if (!TextBox.Visible) return;
 
-
+#if WINDOWS
             int location = (e.X - DisplayArea.X) | (e.Y - DisplayArea.Y) << 16;
 
             switch (e.Button)
@@ -417,6 +427,7 @@ namespace Client.Controls
                     SendMessage(TextBox.Handle, 0xA5, e.Clicks, location);
                     break;
             }
+#endif
         }
 
         public bool CanFocus()
