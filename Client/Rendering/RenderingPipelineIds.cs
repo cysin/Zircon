@@ -4,5 +4,6 @@ namespace Client.Rendering
     {
         public const string SharpDXD3D9 = "DirectX 9";
         public const string SharpDXD3D11 = "DirectX 11";
+        public const string SDL3OpenGL = "OpenGL";
     }
 }

@@ -1,4 +1,4 @@
-﻿using Client.Controls;
+using Client.Controls;
 using Client.Envir;
 using Client.Rendering;
 using Client.Scenes;
@@ -8,7 +8,9 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+#if WINDOWS
 using System.Windows.Forms;
+#endif
 
 namespace Client
 {
@@ -37,28 +39,42 @@ namespace Client
 
         static void Init(string[] args)
         {
+#if WINDOWS
             Application.EnableVisualStyles();
             Application.SetHighDpiMode(HighDpiMode.SystemAware);
             Application.SetCompatibleTextRenderingDefault(false);
+#endif
 
             foreach (KeyValuePair<LibraryFile, string> pair in Libraries.LibraryList)
             {
-                if (!File.Exists(@".\" + pair.Value)) continue;
+                string path = Path.Combine(".", pair.Value);
+                if (!File.Exists(path)) continue;
 
-                CEnvir.LibraryList[pair.Key] = new MirLibrary(@".\" + pair.Value);
+                CEnvir.LibraryList[pair.Key] = new MirLibrary(path);
             }
 
             CEnvir.Init(args);
 
+#if WINDOWS
             CEnvir.Target = new TargetForm();
             string requestedPipelineId = RenderingPipelineManager.NormalizePipelineId(Config.RenderingPipeline);
             if (!string.Equals(Config.RenderingPipeline, requestedPipelineId, StringComparison.OrdinalIgnoreCase))
                 Config.RenderingPipeline = requestedPipelineId;
+#else
+            CEnvir.Target = new Platform.SDL3.SDL3GameWindow(Globals.ClientName, Config.GameSize.Width, Config.GameSize.Height);
+            string requestedPipelineId = RenderingPipelineIds.SDL3OpenGL;
+#endif
 
             string activePipelineId = RenderingPipelineManager.InitializeWithFallback(requestedPipelineId, new RenderingPipelineContext(CEnvir.Target));
             if (!string.Equals(Config.RenderingPipeline, activePipelineId, StringComparison.OrdinalIgnoreCase))
                 Config.RenderingPipeline = activePipelineId;
+
+#if WINDOWS
             DXSoundManager.Create();
+#else
+            var soundManager = new Audio.SDL3SoundManager();
+            soundManager.Initialize(((Platform.SDL3.SDL3GameWindow)CEnvir.Target).NativeHandle);
+#endif
 
             DXControl.ActiveScene = new LoginScene(Config.GameSize);
 
@@ -67,7 +83,9 @@ namespace Client
             CEnvir.Session?.Save(true);
             CEnvir.Unload();
             RenderingPipelineManager.Shutdown();
+#if WINDOWS
             DXSoundManager.Unload();
+#endif
         }
     }
 }

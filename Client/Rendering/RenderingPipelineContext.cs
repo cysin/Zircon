@@ -1,15 +1,14 @@
 using System;
-using System.Windows.Forms;
 
 namespace Client.Rendering
 {
     public sealed class RenderingPipelineContext
     {
-        public RenderingPipelineContext(Form renderTarget)
+        public RenderingPipelineContext(object renderTarget)
         {
             RenderTarget = renderTarget ?? throw new ArgumentNullException(nameof(renderTarget));
         }
 
-        public Form RenderTarget { get; }
+        public object RenderTarget { get; }
     }
 }

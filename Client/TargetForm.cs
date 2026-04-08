@@ -1,6 +1,7 @@
 ﻿using Client.Controls;
 using Client.Envir;
 using Client.Models;
+using Client.Platform;
 using Client.Rendering;
 using Client.Scenes;
 using Library;
@@ -15,9 +16,18 @@ using Font = System.Drawing.Font;
 
 namespace Client
 {
-    public sealed class TargetForm : RenderForm
+    public sealed class TargetForm : RenderForm, IGameWindow
     {
         public bool Resizing { get; private set; }
+
+        // IGameWindow implementation
+        nint IGameWindow.NativeHandle => Handle;
+        int IGameWindow.Width => ClientSize.Width;
+        int IGameWindow.Height => ClientSize.Height;
+        string IGameWindow.Title { get => Text; set => Text = value; }
+        Rectangle IGameWindow.ClientBounds => new Rectangle(Location.X, Location.Y, ClientSize.Width, ClientSize.Height);
+        void IGameWindow.Show() => Show();
+        void IGameWindow.Close() => Close();
 
         public TargetForm() : base(Globals.ClientName)
         {

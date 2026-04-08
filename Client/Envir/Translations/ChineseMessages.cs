@@ -2,7 +2,7 @@
 
 namespace Client.Envir.Translations
 {
-    [ConfigPath(@".\Translations\ChineseMessages.ini", Disabled = false)]
+    [ConfigPath("./Translations/ChineseMessages.ini", Disabled = false)]
     public class ChineseMessages : StringMessages
     {
         [ConfigSection("Message")]

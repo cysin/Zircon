@@ -4,21 +4,28 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Numerics;
 using System.Windows.Forms;
+using Font = System.Drawing.Font;
 
 namespace Client.Rendering
 {
     public static class RenderingPipelineManager
     {
+#if WINDOWS
         private const string DefaultPipelineId = RenderingPipelineIds.SharpDXD3D11;
+#else
+        private const string DefaultPipelineId = RenderingPipelineIds.SDL3OpenGL;
+#endif
         private static readonly Dictionary<string, Func<IRenderingPipeline>> PipelineFactories = new(StringComparer.OrdinalIgnoreCase)
         {
+#if WINDOWS
             { RenderingPipelineIds.SharpDXD3D9, () => new SharpDXD3D9.SharpDXD3D9RenderingPipeline() },
-            { RenderingPipelineIds.SharpDXD3D11, () => new SharpDXD3D11.SharpDXD3D11RenderingPipeline() }
+            { RenderingPipelineIds.SharpDXD3D11, () => new SharpDXD3D11.SharpDXD3D11RenderingPipeline() },
+#endif
+            { RenderingPipelineIds.SDL3OpenGL, () => new SDL3OpenGL.SDL3OpenGLRenderingPipeline() }
         };
 
         private static IRenderingPipeline _activePipeline;
         private static RenderingPipelineContext _context;
-        private static readonly Graphics FallbackGraphics;
         private static readonly List<ITextureCacheItem> FallbackControlCache = new();
         private static readonly List<ITextureCacheItem> FallbackTextureCache = new();
         private static readonly List<ISoundCacheItem> FallbackSoundCache = new();
@@ -29,6 +36,9 @@ namespace Client.Rendering
         private static SpriteShaderEffectRequest? _spriteShaderEffect;
         private static float _fallbackLineWidth = 1F;
         private static TextureFilterMode _fallbackTextureFilter = TextureFilterMode.Point;
+
+#if WINDOWS
+        private static readonly Graphics FallbackGraphics;
         private static readonly object GraphicsLock = new();
 
         static RenderingPipelineManager()
@@ -36,6 +46,7 @@ namespace Client.Rendering
             FallbackGraphics = Graphics.FromHwnd(IntPtr.Zero);
             ConfigureFallbackGraphics(FallbackGraphics);
         }
+#endif
 
         public static string DefaultPipelineIdentifier => DefaultPipelineId;
         public static string? ActivePipelineId => _activePipeline?.Id;
@@ -128,18 +139,18 @@ namespace Client.Rendering
             _activePipeline = null;
         }
 
-        public static void RunMessageLoop(Form form, Action loop)
+        public static void RunMessageLoop(object window, Action loop)
         {
             if (_activePipeline == null)
                 throw new InvalidOperationException("No rendering pipeline has been initialized.");
 
-            if (form == null)
-                throw new ArgumentNullException(nameof(form));
+            if (window == null)
+                throw new ArgumentNullException(nameof(window));
 
             if (loop == null)
                 throw new ArgumentNullException(nameof(loop));
 
-            _activePipeline.RunMessageLoop(form, loop);
+            _activePipeline.RunMessageLoop(window, loop);
         }
 
         public static bool RenderFrame(Action drawScene)
@@ -206,26 +217,74 @@ namespace Client.Rendering
             return _activePipeline.GetSupportedResolutions();
         }
 
-        public static Size MeasureText(string text, Font font)
+        public static Size MeasureText(string text, GameFont font)
         {
             if (_activePipeline != null)
                 return _activePipeline.MeasureText(text, font);
 
+#if WINDOWS
             lock (GraphicsLock)
             {
-                return TextRenderer.MeasureText(FallbackGraphics, text, font);
+                return TextRenderer.MeasureText(FallbackGraphics, text, font.ToDrawingFont());
             }
+#else
+            if (!string.IsNullOrEmpty(text))
+            {
+                nint ttf = Client.Platform.SDL3.SDL3TTF.GetFont(font.Size, font.Bold, font.Italic);
+                if (ttf != nint.Zero && Client.Platform.SDL3.SDL3TTF.TTF_GetStringSize(ttf, text, (nuint)0, out int tw, out int th))
+                    return new Size(tw, th);
+            }
+            return new Size(text?.Length * 8 ?? 0, 16);
+#endif
         }
 
-        public static Size MeasureText(string text, Font font, Size proposedSize, TextFormatFlags format)
+        // Overloads accepting System.Drawing.Font for backward compatibility with existing code
+        public static Size MeasureText(string text, System.Drawing.Font font)
+        {
+            return MeasureText(text, new GameFont(font.Name, font.SizeInPoints,
+                (font.Style & System.Drawing.FontStyle.Bold) != 0,
+                (font.Style & System.Drawing.FontStyle.Italic) != 0));
+        }
+
+        public static Size MeasureText(string text, GameFont font, Size proposedSize, GameTextFormatFlags format)
         {
             if (_activePipeline != null)
                 return _activePipeline.MeasureText(text, font, proposedSize, format);
 
+#if WINDOWS
             lock (GraphicsLock)
             {
-                return TextRenderer.MeasureText(FallbackGraphics, text, font, proposedSize, format);
+                return TextRenderer.MeasureText(FallbackGraphics, text, font.ToDrawingFont(), proposedSize, (TextFormatFlags)format);
             }
+#else
+            if (!string.IsNullOrEmpty(text))
+            {
+                nint ttf = Client.Platform.SDL3.SDL3TTF.GetFont(font.Size, font.Bold, font.Italic);
+                if (ttf != nint.Zero)
+                {
+                    if ((format & GameTextFormatFlags.WordBreak) != 0 && proposedSize.Width > 0)
+                    {
+                        if (Client.Platform.SDL3.SDL3TTF.TTF_GetStringSizeWrapped(ttf, text, (nuint)0, proposedSize.Width, out int ww, out int wh))
+                            return new Size(Math.Min(ww, proposedSize.Width), wh);
+                    }
+                    else
+                    {
+                        if (Client.Platform.SDL3.SDL3TTF.TTF_GetStringSize(ttf, text, (nuint)0, out int tw, out int th))
+                            return new Size(tw, th);
+                    }
+                }
+            }
+            return new Size(text?.Length * 8 ?? 0, 16);
+#endif
+        }
+
+        // Overload accepting System.Drawing.Font + TextFormatFlags
+        public static Size MeasureText(string text, System.Drawing.Font font, Size proposedSize, System.Windows.Forms.TextFormatFlags format)
+        {
+            return MeasureText(text, new GameFont(font.Name, font.SizeInPoints,
+                (font.Style & System.Drawing.FontStyle.Bold) != 0,
+                (font.Style & System.Drawing.FontStyle.Italic) != 0),
+                proposedSize, (GameTextFormatFlags)(int)format);
         }
 
         public static float GetHorizontalDpi()
@@ -233,10 +292,14 @@ namespace Client.Rendering
             if (_activePipeline != null)
                 return _activePipeline.GetHorizontalDpi();
 
+#if WINDOWS
             lock (GraphicsLock)
             {
                 return FallbackGraphics.DpiX;
             }
+#else
+            return 96f;
+#endif
         }
 
         public static void ConfigureGraphics(Graphics graphics)
@@ -244,11 +307,18 @@ namespace Client.Rendering
             if (graphics == null)
                 throw new ArgumentNullException(nameof(graphics));
 
-            if (_activePipeline != null)
+#if WINDOWS
+            if (_activePipeline is SharpDXD3D11.SharpDXD3D11RenderingPipeline d3d11)
             {
-                _activePipeline.ConfigureGraphics(graphics);
+                ConfigureFallbackGraphics(graphics);
                 return;
             }
+            if (_activePipeline is SharpDXD3D9.SharpDXD3D9RenderingPipeline d3d9)
+            {
+                ConfigureFallbackGraphics(graphics);
+                return;
+            }
+#endif
 
             ConfigureFallbackGraphics(graphics);
         }

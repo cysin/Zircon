@@ -37,9 +37,9 @@ namespace Server.Envir
             [100M] = 12000,
         };
 
-        public const string VerifiedPath = @".\Database\Store\Verified\",
-            InvalidPath = @".\Database\Store\Invalid\",
-            CompletePath = @".\Database\Store\Complete\";
+        public const string VerifiedPath = "./Database/Store/Verified/",
+            InvalidPath = "./Database/Store/Invalid/",
+            CompletePath = "./Database/Store/Complete/";
 
         private static HttpListener BuyListener, IPNListener;
         public static ConcurrentQueue<IPNMessage> Messages = new ConcurrentQueue<IPNMessage>();

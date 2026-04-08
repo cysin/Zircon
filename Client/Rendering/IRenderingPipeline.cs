@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Numerics;
-using System.Windows.Forms;
 
 namespace Client.Rendering
 {
@@ -12,7 +11,7 @@ namespace Client.Rendering
 
         void Initialize(RenderingPipelineContext context);
 
-        void RunMessageLoop(Form form, Action loop);
+        void RunMessageLoop(object window, Action loop);
 
         bool RenderFrame(Action drawScene);
 
@@ -30,13 +29,11 @@ namespace Client.Rendering
 
         IReadOnlyList<Size> GetSupportedResolutions();
 
-        Size MeasureText(string text, Font font);
+        Size MeasureText(string text, GameFont font);
 
-        Size MeasureText(string text, Font font, Size proposedSize, TextFormatFlags format);
+        Size MeasureText(string text, GameFont font, Size proposedSize, GameTextFormatFlags format);
 
         float GetHorizontalDpi();
-
-        void ConfigureGraphics(Graphics graphics);
 
         Color ConvertHslToRgb(float h, float s, float l);
 

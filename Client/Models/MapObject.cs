@@ -6,7 +6,9 @@ using Client.Scenes;
 using Client.Scenes.Views;
 using Library;
 using Library.SystemModels;
+#if WINDOWS
 using SharpDX.Direct3D9;
+#endif
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -60,7 +62,11 @@ namespace Client.Models
             }
         }
 
-        public static Texture ShadowTexture;
+#if WINDOWS
+        public static SharpDX.Direct3D9.Texture ShadowTexture;
+#else
+        public static object ShadowTexture;
+#endif
 
         public abstract ObjectType Race { get; }
         public virtual bool Blocking => Visible && !Dead;

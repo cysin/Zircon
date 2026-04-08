@@ -19,13 +19,14 @@ using System.Linq;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using Client.Platform;
 using System.Windows.Forms;
 
 namespace Client.Envir
 {
     public static class CEnvir
     {
-        public static TargetForm Target;
+        public static IGameWindow Target;
         public static Random Random = new Random();
 
         private static DateTime _FPSTime;
@@ -140,7 +141,7 @@ namespace Client.Envir
 
                 try
                 {
-                    File.AppendAllLines(@".\Chat Logs.txt", lines);
+                    File.AppendAllLines("./Chat Logs.txt", lines);
                     lines.Clear();
                 }
                 catch
@@ -327,7 +328,9 @@ namespace Client.Envir
             {
                 try
                 {
-                    Session = new MirDB.Session(SessionMode.Users, @".\Data\") { BackUp = false };
+                    Console.WriteLine("[DB] Loading client database...");
+                    Console.Out.Flush();
+                    Session = new MirDB.Session(SessionMode.Users, "./Data/") { BackUp = false };
 
                     Session.Initialize(
                         Assembly.GetAssembly(typeof(ItemInfo)),
@@ -378,6 +381,14 @@ namespace Client.Envir
                     }
 
                     Loaded = true;
+                    Console.WriteLine("[DB] Client database loaded successfully.");
+                    Console.Out.Flush();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[DB] ERROR loading database: {ex.Message}");
+                    Console.WriteLine(ex.StackTrace);
+                    Console.Out.Flush();
                 }
                 finally
                 {
@@ -907,7 +918,7 @@ namespace Client.Envir
             {
                 if (++ErrorCount > 20 || String.Compare(ex, LastError, StringComparison.OrdinalIgnoreCase) == 0) return;
 
-                const string LogPath = @".\Errors\";
+                const string LogPath = "./Errors/";
 
                 LastError = ex;
                 string state = $"State = {Target?.DisplayRectangle}";

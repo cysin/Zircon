@@ -42,13 +42,13 @@ namespace Client.Scenes.Views
         public event EventHandler<EventArgs> SelectedChanged;
         public void OnSelectedChanged(HelpContainer oValue, HelpContainer nValue)
         {
-            oValue?.Visible = false;
+            if (oValue != null) oValue.Visible = false;
 
             SelectedChanged?.Invoke(this, EventArgs.Empty);
 
             nValue?.Update();
 
-            nValue?.Visible = true;
+            if (nValue != null) nValue.Visible = true;
         }
 
         #endregion

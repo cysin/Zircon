@@ -128,14 +128,18 @@ namespace Client.Envir
         {
             Enqueue(new G.Connected());
             ServerConnected = true;
-
+            Console.WriteLine("[NET] ServerConnected = true");
         }
         public void Process(G.CheckVersion p)
         {
             byte[] clientHash;
+            string exePath = typeof(CConnection).Assembly.Location;
+            if (string.IsNullOrEmpty(exePath))
+                exePath = Path.ChangeExtension(System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName ?? "Zircon", ".dll");
+
             using (SHA256 sha256 = SHA256.Create())
             {
-                using (FileStream stream = File.OpenRead(Path.ChangeExtension(Application.ExecutablePath, ".dll")))
+                using (FileStream stream = File.OpenRead(exePath))
                     clientHash = sha256.ComputeHash(stream);
             }
 
@@ -144,6 +148,7 @@ namespace Client.Envir
         public void Process(G.GoodVersion p)
         {
             Encryption.SetKey(p.DatabaseKey);
+            ServerConnected = true;
 
             LoginScene scene = DXControl.ActiveScene as LoginScene;
 

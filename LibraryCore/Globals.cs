@@ -4,6 +4,7 @@ using MirDB;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 
@@ -315,7 +316,7 @@ namespace Library
 
         public static string PluginPath(string assemblyName)
         {
-            return "Plugins" + "\\" + assemblyName + "\\";
+            return Path.Combine("Plugins", assemblyName) + Path.DirectorySeparatorChar;
         }
     }
 

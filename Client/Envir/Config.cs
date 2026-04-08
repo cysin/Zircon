@@ -5,7 +5,7 @@ using System.Drawing;
 
 namespace Client.Envir
 {
-    [ConfigPath(@".\Zircon.ini")]
+    [ConfigPath("./Zircon.ini")]
     public static class Config
     {
         public static readonly Size IntroSceneSize = new Size(1024, 768);
@@ -33,7 +33,7 @@ namespace Client.Envir
         public static string RenderingPipeline { get; set; } = RenderingPipelineIds.SharpDXD3D9;
         public static TimeSpan CacheDuration { get; set; } = TimeSpan.FromMinutes(30);
         public static string FontName { get; set; } = "MS Sans Serif";
-        public static string MapPath { get; set; } = @".\Map\";
+        public static string MapPath { get; set; } = "./Map/";
         public static bool ClipMouse { get; set; } = false;
         public static bool DebugLabel { get; set; } = false;
         public static float FontSizeMod { get; set; } = 0.0F;

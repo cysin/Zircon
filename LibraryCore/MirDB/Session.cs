@@ -24,11 +24,11 @@ namespace MirDB
         private string BackupRoot { get; }
 
         public string SystemPath => Root + "System" + Extension;
-        public string SystemBackupPath => BackupRoot + @"System\";
+        public string SystemBackupPath => Path.Combine(BackupRoot, "System") + Path.DirectorySeparatorChar;
         public byte[] SystemHeader;
 
         public string UsersPath => Root + "Users" + Extension;
-        public string UsersBackupPath => BackupRoot + @"Users\";
+        public string UsersBackupPath => Path.Combine(BackupRoot, "Users") + Path.DirectorySeparatorChar;
 
         public Assembly[] Assemblies { get; private set; }
 
@@ -64,7 +64,7 @@ namespace MirDB
             Mode = mode;
         }
 
-        public Session(SessionMode mode, string root = @".\Database\", string backup = @".\Backup\")
+        public Session(SessionMode mode, string root = "./Database/", string backup = "./Backup/")
         {
             Root = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, root));
             BackupRoot = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, backup));

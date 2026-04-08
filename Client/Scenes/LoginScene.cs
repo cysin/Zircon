@@ -316,6 +316,12 @@ namespace Client.Scenes
                         ConnectionBox.Dispose();
 
                     LoginBox.Visible = true;
+                    var libSize = LoginBox.Library?.GetSize(LoginBox.Index) ?? System.Drawing.Size.Empty;
+                    Console.WriteLine($"[LOGIN] LibSize={libSize} ControlSize={LoginBox.Size} IsVisible={LoginBox.IsVisible} DA={LoginBox.DisplayArea}");
+                    // Force layout recalculation
+                    LoginBox.Location = new Point((Size.Width - LoginBox.Size.Width) / 2, Size.Height - LoginBox.Size.Height - 20);
+                    Console.WriteLine($"[LOGIN] After relayout: DA={LoginBox.DisplayArea} Size={LoginBox.Size}");
+                    Console.Out.Flush();
                 }
                 return;
             }
