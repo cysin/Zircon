@@ -3,6 +3,7 @@ using Client.Envir;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.IO;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
@@ -21,6 +22,10 @@ namespace Client.Rendering.SDL3OpenGL
 
         private GLManager _manager;
         private GLSpriteRenderer _renderer;
+        private Size _windowLogicalSize;
+        private Size _windowPixelSize;
+        private float _windowPixelDensity = 1f;
+        private float _windowDisplayScale = 1f;
 
         private float _opacity = 1f;
         private bool _blending;
@@ -54,21 +59,22 @@ namespace Client.Rendering.SDL3OpenGL
                 _glContext = sdl3Window.GLContext;
                 _ownsWindow = false;
 
-                SDL3Native.SDL_GL_MakeCurrent(_window, _glContext);
-                SDL3Native.SDL_GL_SetSwapInterval(Config.VSync ? 1 : 0);
+                SDL.SDL_GL_MakeCurrent(_window, _glContext);
+                SDL.SDL_GL_SetSwapInterval(Config.VSync ? 1 : 0);
 
                 GL.Initialize();
                 GL.glEnable(GL.GL_BLEND);
                 GL.glBlendFunc(GL.GL_SRC_ALPHA, GL.GL_ONE_MINUS_SRC_ALPHA);
                 GL.glPixelStorei(0x0CF5, 1);
 
-                SDL3Native.SDL_GetWindowSize(_window, out int sw, out int sh);
-                GL.glViewport(0, 0, sw, sh);
+                UpdateWindowMetrics();
+                GL.glViewport(0, 0, _windowPixelSize.Width, _windowPixelSize.Height);
 
                 _manager = new GLManager();
-                _manager.Initialize(new Size(sw, sh));
+                _manager.Initialize(_windowPixelSize, _windowLogicalSize);
                 _renderer = new GLSpriteRenderer();
                 _renderer.Initialize();
+                _renderer.WhitePixelId = _manager.WhitePixelId;
                 _validResolutions = QueryDisplayModes();
                 _fullscreen = Config.FullScreen;
                 SDL3TTF.EnsureInitialized();
@@ -83,23 +89,23 @@ namespace Client.Rendering.SDL3OpenGL
             else
             {
                 // Create our own SDL3 window.
-                if (!SDL3Native.SDL_Init(SDL3Native.SDL_INIT_VIDEO | SDL3Native.SDL_INIT_EVENTS))
-                    throw new InvalidOperationException($"SDL_Init failed: {SDL3Native.GetError()}");
+                if (SDL.SDL_Init(SDL.SDL_INIT_VIDEO | SDL.SDL_INIT_EVENTS) < 0)
+                    throw new InvalidOperationException($"SDL_Init failed: {SDL.GetError()}");
 
-                SDL3Native.SDL_GL_SetAttribute(SDL3Native.SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-                SDL3Native.SDL_GL_SetAttribute(SDL3Native.SDL_GL_CONTEXT_MINOR_VERSION, 3);
-                SDL3Native.SDL_GL_SetAttribute(SDL3Native.SDL_GL_CONTEXT_PROFILE_MASK, SDL3Native.SDL_GL_CONTEXT_PROFILE_CORE);
-                SDL3Native.SDL_GL_SetAttribute(SDL3Native.SDL_GL_DOUBLEBUFFER, 1);
+                SDL.SDL_GL_SetAttribute(SDL.SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+                SDL.SDL_GL_SetAttribute(SDL.SDL_GL_CONTEXT_MINOR_VERSION, 3);
+                SDL.SDL_GL_SetAttribute(SDL.SDL_GL_CONTEXT_PROFILE_MASK, SDL.SDL_GL_CONTEXT_PROFILE_CORE);
+                SDL.SDL_GL_SetAttribute(SDL.SDL_GL_DOUBLEBUFFER, 1);
 
-                ulong flags = SDL3Native.SDL_WINDOW_OPENGL | SDL3Native.SDL_WINDOW_HIGH_PIXEL_DENSITY;
+                ulong flags = SDL.SDL_WINDOW_OPENGL;
                 if (Config.FullScreen)
-                    flags |= SDL3Native.SDL_WINDOW_FULLSCREEN;
+                    flags |= SDL.SDL_WINDOW_FULLSCREEN;
                 if (Config.Borderless)
-                    flags |= SDL3Native.SDL_WINDOW_BORDERLESS;
+                    flags |= SDL.SDL_WINDOW_BORDERLESS;
 
-                _window = SDL3Native.SDL_CreateWindow("Zircon", gameSize.Width, gameSize.Height, flags);
+                _window = SDL.SDL_CreateWindow("Zircon", gameSize.Width, gameSize.Height, flags);
                 if (_window == IntPtr.Zero)
-                    throw new InvalidOperationException($"SDL_CreateWindow failed: {SDL3Native.GetError()}");
+                    throw new InvalidOperationException($"SDL_CreateWindow failed: {SDL.GetError()}");
 
                 _ownsWindow = true;
             }
@@ -107,12 +113,12 @@ namespace Client.Rendering.SDL3OpenGL
             _fullscreen = Config.FullScreen;
 
             // Create OpenGL context
-            _glContext = SDL3Native.SDL_GL_CreateContext(_window);
+            _glContext = SDL.SDL_GL_CreateContext(_window);
             if (_glContext == IntPtr.Zero)
-                throw new InvalidOperationException($"SDL_GL_CreateContext failed: {SDL3Native.GetError()}");
+                throw new InvalidOperationException($"SDL_GL_CreateContext failed: {SDL.GetError()}");
 
-            SDL3Native.SDL_GL_MakeCurrent(_window, _glContext);
-            SDL3Native.SDL_GL_SetSwapInterval(Config.VSync ? 1 : 0);
+            SDL.SDL_GL_MakeCurrent(_window, _glContext);
+            SDL.SDL_GL_SetSwapInterval(Config.VSync ? 1 : 0);
 
             // Load GL function pointers
             GL.Initialize();
@@ -122,15 +128,16 @@ namespace Client.Rendering.SDL3OpenGL
             GL.glBlendFunc(GL.GL_SRC_ALPHA, GL.GL_ONE_MINUS_SRC_ALPHA);
             GL.glPixelStorei(0x0CF5, 1); // GL_UNPACK_ALIGNMENT = 1
 
-            SDL3Native.SDL_GetWindowSize(_window, out int w, out int h);
-            GL.glViewport(0, 0, w, h);
+            UpdateWindowMetrics();
+            GL.glViewport(0, 0, _windowPixelSize.Width, _windowPixelSize.Height);
 
             // Initialise subsystems
             _manager = new GLManager();
-            _manager.Initialize(new Size(w, h));
+            _manager.Initialize(_windowPixelSize, _windowLogicalSize);
 
             _renderer = new GLSpriteRenderer();
             _renderer.Initialize();
+            _renderer.WhitePixelId = _manager.WhitePixelId;
 
             _validResolutions = QueryDisplayModes();
 
@@ -143,6 +150,9 @@ namespace Client.Rendering.SDL3OpenGL
         {
             if (loop == null)
                 throw new ArgumentNullException(nameof(loop));
+
+            if (_window != IntPtr.Zero)
+                SDL.SDL_StartTextInput(_window);
 
             bool running = true;
             while (running)
@@ -157,6 +167,11 @@ namespace Client.Rendering.SDL3OpenGL
 
                         case SDL.SDL_EVENT_WINDOW_CLOSE_REQUESTED:
                             running = false;
+                            break;
+
+                        case SDL.SDL_EVENT_WINDOW_RESIZED:
+                        case SDL.SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+                            UpdateBackBufferSize();
                             break;
 
                         case SDL.SDL_EVENT_MOUSE_MOTION:
@@ -226,8 +241,22 @@ namespace Client.Rendering.SDL3OpenGL
                             var activeTextBox = DXTextBox.ActiveTextBox;
                             if (activeTextBox?.TextBox != null)
                             {
+                                if (args.KeyCode == Keys.Tab && activeTextBox.TextBox.HandleTabNavigation(args.Shift))
+                                    break;
+
                                 activeTextBox.TextBox.OnKeyDownPublic(args);
                                 if (args.Handled) break;
+
+                                if (!args.SuppressKeyPress && args.KeyCode == Keys.Enter)
+                                {
+                                    var keyPressArgs = new KeyPressEventArgs((char)Keys.Enter);
+                                    activeTextBox.TextBox.OnKeyPressPublic(keyPressArgs);
+                                    if (keyPressArgs.Handled)
+                                    {
+                                        activeTextBox.TextureValid = false;
+                                        break;
+                                    }
+                                }
                             }
 
                             try { DXControl.ActiveScene?.OnKeyDown(args); }
@@ -257,35 +286,29 @@ namespace Client.Rendering.SDL3OpenGL
                         {
                             // Route text input to active TextBox first
                             var activeTextBox2 = DXTextBox.ActiveTextBox;
+                            string inputText = e.text.text == IntPtr.Zero ? string.Empty : Marshal.PtrToStringUTF8(e.text.text) ?? string.Empty;
+
                             if (activeTextBox2?.TextBox != null)
                             {
-                                unsafe
+                                if (!string.IsNullOrEmpty(inputText))
                                 {
-                                    string inputText = Marshal.PtrToStringUTF8((IntPtr)e.text.text);
-                                    if (!string.IsNullOrEmpty(inputText))
+                                    foreach (char c in inputText)
                                     {
-                                        foreach (char c in inputText)
-                                        {
-                                            var kpe = new KeyPressEventArgs(c);
-                                            activeTextBox2.TextBox.OnKeyPressPublic(kpe);
-                                        }
-                                        activeTextBox2.TextureValid = false;
+                                        var kpe = new KeyPressEventArgs(c);
+                                        activeTextBox2.TextBox.OnKeyPressPublic(kpe);
                                     }
+                                    activeTextBox2.TextureValid = false;
                                 }
                                 break;
                             }
 
-                            unsafe
+                            if (!string.IsNullOrEmpty(inputText))
                             {
-                                string text = Marshal.PtrToStringUTF8((IntPtr)e.text.text);
-                                if (!string.IsNullOrEmpty(text))
+                                foreach (char c in inputText)
                                 {
-                                    foreach (char c in text)
-                                    {
-                                        var args = new KeyPressEventArgs(c);
-                                        try { DXControl.ActiveScene?.OnKeyPress(args); }
-                                        catch (Exception ex) { CEnvir.SaveException(ex); }
-                                    }
+                                    var args = new KeyPressEventArgs(c);
+                                    try { DXControl.ActiveScene?.OnKeyPress(args); }
+                                    catch (Exception ex) { CEnvir.SaveException(ex); }
                                 }
                             }
                             break;
@@ -366,14 +389,16 @@ namespace Client.Rendering.SDL3OpenGL
                 _manager.SetBackBuffer();
                 _renderer.SetDefaultBlend();
 
-                Size bbSize = _manager.GetBackBufferSize();
+                Size bbSize = _windowPixelSize.IsEmpty ? _manager.GetBackBufferSize() : _windowPixelSize;
                 GL.glViewport(0, 0, bbSize.Width, bbSize.Height);
                 GL.glClearColor(0f, 0f, 0f, 1f);
                 GL.glClear(GL.GL_COLOR_BUFFER_BIT);
 
                 drawScene();
 
-                SDL3Native.SDL_GL_SwapWindow(_window);
+                _drawDiagFrame++;
+                TryDumpFrame();
+                SDL.SDL_GL_SwapWindow(_window);
                 return true;
             }
             catch (Exception ex)
@@ -389,12 +414,12 @@ namespace Client.Rendering.SDL3OpenGL
         {
             _fullscreen = !_fullscreen;
             Config.FullScreen = _fullscreen;
-            SDL3Native.SDL_SetWindowFullscreen(_window, _fullscreen);
+            SDL.SDL_SetWindowFullscreen(_window, _fullscreen);
 
             if (!_fullscreen)
             {
                 // Restore windowed size
-                SDL3Native.SDL_SetWindowSize(_window, Config.GameSize.Width, Config.GameSize.Height);
+                SDL.SDL_SetWindowSize(_window, Config.GameSize.Width, Config.GameSize.Height);
             }
 
             UpdateBackBufferSize();
@@ -403,7 +428,7 @@ namespace Client.Rendering.SDL3OpenGL
         public void SetResolution(Size size)
         {
             Config.GameSize = size;
-            SDL3Native.SDL_SetWindowSize(_window, size.Width, size.Height);
+            SDL.SDL_SetWindowSize(_window, size.Width, size.Height);
             UpdateBackBufferSize();
         }
 
@@ -585,6 +610,8 @@ namespace Client.Rendering.SDL3OpenGL
             return MathF.Floor(v) + 0.5f;
         }
 
+        private static int _drawDiagFrame;
+        private bool _frameDumped;
         public void DrawTexture(RenderTexture texture, Rectangle sourceRectangle, RectangleF destinationRectangle, Color colour)
         {
             if (!texture.IsValid || _renderer == null)
@@ -595,6 +622,8 @@ namespace Client.Rendering.SDL3OpenGL
             if (texId == 0)
                 return;
 
+            bool flipV = texture.NativeHandle is GLFramebufferHandle;
+
             Size vp = GetCurrentViewportSize();
 
             if (TryDrawSpriteEffect(texId, texSize.Width, texSize.Height, destinationRectangle, sourceRectangle, colour, Matrix3x2.Identity, vp))
@@ -604,7 +633,7 @@ namespace Client.Rendering.SDL3OpenGL
             {
                 _renderer.Draw(texId, texSize.Width, texSize.Height,
                     destinationRectangle, sourceRectangle, colour,
-                    Matrix3x2.Identity, _blendMode, _opacity, _blendRate, vp);
+                    Matrix3x2.Identity, _blendMode, _opacity, _blendRate, vp, flipV);
                 return;
             }
 
@@ -612,7 +641,7 @@ namespace Client.Rendering.SDL3OpenGL
             _renderer.SetDefaultBlend();
             _renderer.Draw(texId, texSize.Width, texSize.Height,
                 destinationRectangle, sourceRectangle, colour,
-                Matrix3x2.Identity, BlendMode.NONE, _opacity, _blendRate, vp);
+                Matrix3x2.Identity, BlendMode.NONE, _opacity, _blendRate, vp, flipV);
         }
 
         public void DrawTexture(RenderTexture texture, Rectangle? sourceRectangle, Matrix3x2 transform, Vector3 center, Vector3 translation, Color colour)
@@ -732,7 +761,13 @@ namespace Client.Rendering.SDL3OpenGL
             _manager.ReleaseRenderTarget(renderTarget);
         }
 
-        public Size GetBackBufferSize() => _manager.GetBackBufferSize();
+        public Size GetBackBufferSize()
+        {
+            if (!_windowLogicalSize.IsEmpty)
+                return _windowLogicalSize;
+
+            return Config.GameSize;
+        }
 
         public void Clear(RenderClearFlags flags, Color colour, float z, int stencil, params Rectangle[] regions)
         {
@@ -747,13 +782,21 @@ namespace Client.Rendering.SDL3OpenGL
             if (regions != null && regions.Length > 0)
             {
                 GLFramebufferHandle current = _manager.GetCurrentTargetHandle();
-                int fbHeight = current?.Height ?? _manager.GetBackBufferSize().Height;
+                bool backBuffer = current == null || current.FramebufferId == 0;
+                Size logicalSize = backBuffer ? GetBackBufferSize() : new Size(current.Width, current.Height);
+                Size pixelSize = backBuffer ? (_windowPixelSize.IsEmpty ? logicalSize : _windowPixelSize) : logicalSize;
+                float scaleX = logicalSize.Width > 0 ? pixelSize.Width / (float)logicalSize.Width : 1f;
+                float scaleY = logicalSize.Height > 0 ? pixelSize.Height / (float)logicalSize.Height : 1f;
 
                 GL.glEnable(GL.GL_SCISSOR_TEST);
                 foreach (Rectangle region in regions)
                 {
-                    int scissorY = fbHeight - region.Bottom;
-                    GL.glScissor(region.X, scissorY, region.Width, region.Height);
+                    int left = (int)MathF.Floor(region.Left * scaleX);
+                    int top = (int)MathF.Floor(region.Top * scaleY);
+                    int right = (int)MathF.Ceiling(region.Right * scaleX);
+                    int bottom = (int)MathF.Ceiling(region.Bottom * scaleY);
+                    int scissorY = pixelSize.Height - bottom;
+                    GL.glScissor(left, scissorY, Math.Max(0, right - left), Math.Max(0, bottom - top));
                     GL.glClearColor(r, g, b, a);
                     GL.glClear(GL.GL_COLOR_BUFFER_BIT);
                 }
@@ -908,20 +951,20 @@ namespace Client.Rendering.SDL3OpenGL
 
             if (_glContext != IntPtr.Zero)
             {
-                SDL3Native.SDL_GL_DestroyContext(_glContext);
+                SDL.SDL_GL_DestroyContext(_glContext);
                 _glContext = IntPtr.Zero;
             }
 
             if (_window != IntPtr.Zero && _ownsWindow)
             {
-                SDL3Native.SDL_DestroyWindow(_window);
+                SDL.SDL_DestroyWindow(_window);
                 _window = IntPtr.Zero;
             }
 
             SDL3TTF.ShutdownFonts();
 
             if (_ownsWindow)
-                SDL3Native.SDL_Quit();
+                SDL.SDL_Quit();
         }
 
         // ── Private helpers ─────────────────────────────────────────────────
@@ -931,17 +974,111 @@ namespace Client.Rendering.SDL3OpenGL
             if (_window == IntPtr.Zero)
                 return;
 
-            SDL3Native.SDL_GetWindowSize(_window, out int w, out int h);
-            _manager?.ResizeBackBuffer(new Size(w, h));
+            UpdateWindowMetrics();
+            GL.glViewport(0, 0, _windowPixelSize.Width, _windowPixelSize.Height);
+            _manager?.ResizeBackBuffer(_windowPixelSize, _windowLogicalSize);
         }
 
         private Size GetCurrentViewportSize()
         {
             GLFramebufferHandle current = _manager?.GetCurrentTargetHandle();
             if (current != null)
-                return new Size(current.Width, current.Height);
+            {
+                if (current.FramebufferId == 0)
+                    return GetBackBufferSize();
 
-            return _manager?.GetBackBufferSize() ?? Config.GameSize;
+                return new Size(current.Width, current.Height);
+            }
+
+            return GetBackBufferSize();
+        }
+
+        private void UpdateWindowMetrics()
+        {
+            Size logicalSize = Config.GameSize;
+            if (SDL.SDL_GetWindowSize(_window, out int logicalWidth, out int logicalHeight) &&
+                logicalWidth > 0 && logicalHeight > 0)
+            {
+                logicalSize = new Size(logicalWidth, logicalHeight);
+            }
+
+            Size pixelSize = logicalSize;
+            if (SDL.SDL_GetWindowSizeInPixels(_window, out int pixelWidth, out int pixelHeight) &&
+                pixelWidth > 0 && pixelHeight > 0)
+            {
+                pixelSize = new Size(pixelWidth, pixelHeight);
+            }
+
+            _windowLogicalSize = logicalSize;
+            _windowPixelSize = pixelSize;
+            _windowPixelDensity = SDL.SDL_GetWindowPixelDensity(_window);
+            _windowDisplayScale = SDL.SDL_GetWindowDisplayScale(_window);
+
+            if (_windowPixelDensity <= 0f && logicalSize.Width > 0 && logicalSize.Height > 0)
+                _windowPixelDensity = Math.Max(pixelSize.Width / (float)logicalSize.Width, pixelSize.Height / (float)logicalSize.Height);
+
+            if (_windowDisplayScale <= 0f)
+                _windowDisplayScale = _windowPixelDensity > 0f ? _windowPixelDensity : 1f;
+        }
+
+        private void TryDumpFrame()
+        {
+            if (_frameDumped)
+                return;
+
+            string dumpPath = Environment.GetEnvironmentVariable("ZIRCON_DUMP_FRAME");
+            if (string.IsNullOrWhiteSpace(dumpPath))
+                return;
+
+            if (DXControl.ActiveScene is Client.Scenes.LoginScene loginScene && !loginScene.LoginBox.Visible)
+                return;
+
+            Size size = _windowPixelSize.IsEmpty ? _manager?.GetBackBufferSize() ?? Config.GameSize : _windowPixelSize;
+            if (size.Width <= 0 || size.Height <= 0)
+                return;
+
+            byte[] pixels = new byte[size.Width * size.Height * 4];
+            GCHandle handle = GCHandle.Alloc(pixels, GCHandleType.Pinned);
+
+            try
+            {
+                GL.glReadPixels(0, 0, size.Width, size.Height, GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, handle.AddrOfPinnedObject());
+                WritePpm(dumpPath, pixels, size);
+                _frameDumped = true;
+                Console.WriteLine($"[GL] Dumped frame to {dumpPath}");
+                Console.Out.Flush();
+            }
+            finally
+            {
+                handle.Free();
+            }
+        }
+
+        private static void WritePpm(string path, byte[] pixels, Size size)
+        {
+            using FileStream stream = File.Create(path);
+            using StreamWriter writer = new StreamWriter(stream, System.Text.Encoding.ASCII, 1024, leaveOpen: true);
+            writer.WriteLine("P6");
+            writer.WriteLine($"{size.Width} {size.Height}");
+            writer.WriteLine("255");
+            writer.Flush();
+
+            byte[] row = new byte[size.Width * 3];
+            for (int y = size.Height - 1; y >= 0; y--)
+            {
+                int srcRow = y * size.Width * 4;
+                int dst = 0;
+
+                for (int x = 0; x < size.Width; x++)
+                {
+                    int src = srcRow + x * 4;
+                    row[dst++] = pixels[src];
+                    row[dst++] = pixels[src + 1];
+                    row[dst++] = pixels[src + 2];
+                }
+
+                stream.Write(row, 0, row.Length);
+            }
         }
 
         private static List<Size> QueryDisplayModes()
@@ -951,25 +1088,24 @@ namespace Client.Rendering.SDL3OpenGL
 
             try
             {
-                IntPtr displaysPtr = SDL3Native.SDL_GetDisplays(out int displayCount);
+                IntPtr displaysPtr = SDL.SDL_GetDisplays(out int displayCount);
                 if (displaysPtr == IntPtr.Zero || displayCount <= 0)
                     return result;
 
                 // Read first display ID
                 uint displayId = (uint)Marshal.ReadInt32(displaysPtr);
 
-                IntPtr modesPtr = SDL3Native.SDL_GetFullscreenDisplayModes(displayId, out int modeCount);
+                IntPtr modesPtr = SDL.SDL_GetFullscreenDisplayModes(displayId, out int modeCount);
                 if (modesPtr == IntPtr.Zero || modeCount <= 0)
                     return result;
 
-                int structSize = Marshal.SizeOf<SDL3Native.SDL_DisplayMode>();
                 for (int i = 0; i < modeCount; i++)
                 {
                     IntPtr entryPtr = Marshal.ReadIntPtr(modesPtr, i * IntPtr.Size);
                     if (entryPtr == IntPtr.Zero)
                         continue;
 
-                    SDL3Native.SDL_DisplayMode mode = Marshal.PtrToStructure<SDL3Native.SDL_DisplayMode>(entryPtr);
+                    Client.Platform.SDL3.SDL_DisplayMode mode = Marshal.PtrToStructure<Client.Platform.SDL3.SDL_DisplayMode>(entryPtr);
 
                     Size size = new Size(mode.w, mode.h);
                     if (size.Width < minimum.Width || size.Height < minimum.Height)

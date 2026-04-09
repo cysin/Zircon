@@ -57,6 +57,7 @@ namespace Client.Rendering.SDL3OpenGL
         private byte[] _paletteData;
         private GLTextureHandle _lightTextureHandle;
         private GLTextureHandle _poisonTextureHandle;
+        private uint _whitePixelId;
 
         private Size _backBufferSize;
         private TextureFilterMode _textureFilterMode = TextureFilterMode.Point;
@@ -64,7 +65,7 @@ namespace Client.Rendering.SDL3OpenGL
         /// <summary>
         /// Initialises back buffer / scratch targets and loads built-in textures.
         /// </summary>
-        public void Initialize(Size backBufferSize)
+        public void Initialize(Size backBufferSize, Size scratchTargetSize)
         {
             _backBufferSize = backBufferSize;
 
@@ -77,7 +78,7 @@ namespace Client.Rendering.SDL3OpenGL
                 Height = backBufferSize.Height
             };
 
-            _scratchTarget = CreateFramebuffer(backBufferSize);
+            _scratchTarget = CreateFramebuffer(scratchTargetSize);
             _currentTarget = _backBufferHandle;
 
             GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, _backBufferHandle.FramebufferId);
@@ -307,15 +308,21 @@ namespace Client.Rendering.SDL3OpenGL
             return _backBufferSize;
         }
 
-        public void ResizeBackBuffer(Size newSize)
+        public void ResizeBackBuffer(Size newSize, Size scratchTargetSize)
         {
             _backBufferSize = newSize;
             _backBufferHandle.Width = newSize.Width;
             _backBufferHandle.Height = newSize.Height;
 
+            if (ReferenceEquals(_currentTarget, _scratchTarget))
+                _currentTarget = _backBufferHandle;
+
             // Recreate scratch target at the new size
             _scratchTarget?.Dispose();
-            _scratchTarget = CreateFramebuffer(newSize);
+            _scratchTarget = CreateFramebuffer(scratchTargetSize);
+
+            if (ReferenceEquals(_currentTarget, _backBufferHandle))
+                SetBackBuffer();
         }
 
         // ── Color fill ──────────────────────────────────────────────────────
@@ -435,6 +442,8 @@ namespace Client.Rendering.SDL3OpenGL
 
         private GLFramebufferHandle CreateFramebuffer(Size size)
         {
+            size = new Size(Math.Max(1, size.Width), Math.Max(1, size.Height));
+
             GL.glGenTextures(1, out uint texId);
             GL.glBindTexture(GL.GL_TEXTURE_2D, texId);
             GL.glTexImage2D(GL.GL_TEXTURE_2D, 0, (int)GL.GL_RGBA8,
@@ -454,6 +463,7 @@ namespace Client.Rendering.SDL3OpenGL
             uint status = GL.glCheckFramebufferStatus(GL.GL_FRAMEBUFFER);
             if (status != GL.GL_FRAMEBUFFER_COMPLETE)
                 Console.WriteLine($"[GLManager] Framebuffer incomplete: 0x{status:X}");
+            // FBO created successfully
 
             GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, 0);
 
@@ -475,11 +485,28 @@ namespace Client.Rendering.SDL3OpenGL
             GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_T, (int)GL.GL_CLAMP_TO_EDGE);
         }
 
+        public uint WhitePixelId => _whitePixelId;
+
         private void LoadBuiltInTextures()
         {
+            CreateWhitePixel();
             LoadPaletteTexture();
             LoadLightTexture();
             LoadPoisonTexture();
+        }
+
+        private void CreateWhitePixel()
+        {
+            GL.glGenTextures(1, out _whitePixelId);
+            GL.glBindTexture(GL.GL_TEXTURE_2D, _whitePixelId);
+            byte[] white = { 255, 255, 255, 255 };
+            GCHandle pin = GCHandle.Alloc(white, GCHandleType.Pinned);
+            GL.glTexImage2D(GL.GL_TEXTURE_2D, 0, (int)GL.GL_RGBA8, 1, 1, 0,
+                GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, pin.AddrOfPinnedObject());
+            pin.Free();
+            GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, (int)GL.GL_NEAREST);
+            GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, (int)GL.GL_NEAREST);
+            GL.glBindTexture(GL.GL_TEXTURE_2D, 0);
         }
 
         private void LoadPaletteTexture()

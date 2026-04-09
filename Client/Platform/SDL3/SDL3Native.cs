@@ -14,14 +14,15 @@ namespace Client.Platform.SDL3
         // Window
         [DllImport(LibName)] public static extern nint SDL_CreateWindow([MarshalAs(UnmanagedType.LPUTF8Str)] string title, int w, int h, ulong flags);
         [DllImport(LibName)] public static extern void SDL_DestroyWindow(nint window);
-        [DllImport(LibName)] public static extern int SDL_GetWindowSize(nint window, out int w, out int h);
-        [DllImport(LibName)] public static extern int SDL_SetWindowSize(nint window, int w, int h);
-        [DllImport(LibName)] public static extern int SDL_SetWindowFullscreen(nint window, bool fullscreen);
-        [DllImport(LibName)] public static extern int SDL_SetWindowTitle(nint window, [MarshalAs(UnmanagedType.LPUTF8Str)] string title);
+        [DllImport(LibName)] public static extern bool SDL_GetWindowSize(nint window, out int w, out int h);
+        [DllImport(LibName)] public static extern bool SDL_GetWindowSizeInPixels(nint window, out int w, out int h);
+        [DllImport(LibName)] public static extern bool SDL_SetWindowSize(nint window, int w, int h);
+        [DllImport(LibName)] public static extern bool SDL_SetWindowFullscreen(nint window, bool fullscreen);
+        [DllImport(LibName)] public static extern bool SDL_SetWindowTitle(nint window, [MarshalAs(UnmanagedType.LPUTF8Str)] string title);
         [DllImport(LibName)] public static extern ulong SDL_GetWindowFlags(nint window);
-        [DllImport(LibName)] public static extern int SDL_SetWindowPosition(nint window, int x, int y);
+        [DllImport(LibName)] public static extern bool SDL_SetWindowPosition(nint window, int x, int y);
         [DllImport(LibName)] public static extern nint SDL_GetWindowProperties(nint window);
-        [DllImport(LibName)] public static extern int SDL_GetWindowPosition(nint window, out int x, out int y);
+        [DllImport(LibName)] public static extern bool SDL_GetWindowPosition(nint window, out int x, out int y);
 
         // GL
         [DllImport(LibName)] public static extern int SDL_GL_SetAttribute(int attr, int value);
@@ -38,6 +39,8 @@ namespace Client.Platform.SDL3
         // Display
         [DllImport(LibName)] public static extern nint SDL_GetDisplays(out int count);
         [DllImport(LibName)] public static extern float SDL_GetDisplayContentScale(uint displayId);
+        [DllImport(LibName)] public static extern float SDL_GetWindowPixelDensity(nint window);
+        [DllImport(LibName)] public static extern float SDL_GetWindowDisplayScale(nint window);
         [DllImport(LibName)] public static extern nint SDL_GetFullscreenDisplayModes(uint displayId, out int count);
 
         // Cursor
@@ -49,8 +52,8 @@ namespace Client.Platform.SDL3
         [DllImport(LibName)] public static extern nint SDL_GetClipboardText();
 
         // Text input
-        [DllImport(LibName)] public static extern int SDL_StartTextInput(nint window);
-        [DllImport(LibName)] public static extern int SDL_StopTextInput(nint window);
+        [DllImport(LibName)] public static extern bool SDL_StartTextInput(nint window);
+        [DllImport(LibName)] public static extern bool SDL_StopTextInput(nint window);
 
         // Audio
         [DllImport(LibName)] public static extern int SDL_InitSubSystem(uint flags);
@@ -61,10 +64,13 @@ namespace Client.Platform.SDL3
         // Constants
         public const uint SDL_INIT_VIDEO = 0x00000020;
         public const uint SDL_INIT_AUDIO = 0x00000010;
+        public const uint SDL_INIT_EVENTS = 0x00004000;
 
         public const ulong SDL_WINDOW_OPENGL = 0x0000000000000002;
         public const ulong SDL_WINDOW_RESIZABLE = 0x0000000000000020;
         public const ulong SDL_WINDOW_FULLSCREEN = 0x0000000000000001;
+        public const ulong SDL_WINDOW_BORDERLESS = 0x0000000000000010;
+        public const ulong SDL_WINDOW_HIGH_PIXEL_DENSITY = 0x0000000000002000;
         public const ulong SDL_WINDOW_INPUT_FOCUS = 0x0000000000000200;
 
         // GL attributes
@@ -117,6 +123,20 @@ namespace Client.Platform.SDL3
             nint ptr = SDL_GetError();
             return ptr == nint.Zero ? string.Empty : Marshal.PtrToStringUTF8(ptr) ?? string.Empty;
         }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct SDL_DisplayMode
+    {
+        public uint displayID;
+        public uint format;
+        public int w;
+        public int h;
+        public float pixel_density;
+        public float refresh_rate;
+        public int refresh_rate_numerator;
+        public int refresh_rate_denominator;
+        public nint internal_;
     }
 
     // SDL_Event union - simplified for the events we need
@@ -195,13 +215,13 @@ namespace Client.Platform.SDL3
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    public unsafe struct SDL_TextInputEvent
+    public struct SDL_TextInputEvent
     {
         public uint type;
         public uint reserved;
         public ulong timestamp;
         public uint windowID;
-        public fixed byte text[64];
+        public nint text;
     }
 
     [StructLayout(LayoutKind.Sequential)]

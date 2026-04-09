@@ -99,6 +99,7 @@ namespace Client.Rendering.SDL3OpenGL
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void d_glGetIntegervArray(uint pname, int[] data);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void d_glPixelStorei(uint pname, int param);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void d_glLineWidth(float width);
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void d_glReadPixels(int x, int y, int width, int height, uint format, uint type, IntPtr data);
 
         // Texture
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] public delegate void d_glGenTextures(int n, out uint textures);
@@ -176,6 +177,7 @@ namespace Client.Rendering.SDL3OpenGL
         public static d_glGetIntegervArray glGetIntegervArray;
         public static d_glPixelStorei glPixelStorei;
         public static d_glLineWidth glLineWidth;
+        public static d_glReadPixels glReadPixels;
 
         public static d_glGenTextures glGenTextures;
         public static d_glDeleteTextures glDeleteTextures;
@@ -259,6 +261,7 @@ namespace Client.Rendering.SDL3OpenGL
             glGetIntegervArray = Load<d_glGetIntegervArray>("glGetIntegerv");
             glPixelStorei = Load<d_glPixelStorei>("glPixelStorei");
             glLineWidth = Load<d_glLineWidth>("glLineWidth");
+            glReadPixels = Load<d_glReadPixels>("glReadPixels");
 
             glGenTextures = Load<d_glGenTextures>("glGenTextures");
             glDeleteTextures = Load<d_glDeleteTextures>("glDeleteTextures");

@@ -425,15 +425,50 @@ namespace System.Windows.Forms
     public class TextBox : IDisposable
     {
         private bool _disposed;
+        private string _text = "";
+        private int _selectionStart;
+        private int _selectionLength;
+        private bool _visible;
 
-        public string Text { get; set; } = "";
-        public int SelectionStart { get; set; }
-        public int SelectionLength { get; set; }
+        public string Text
+        {
+            get => _text;
+            set
+            {
+                _text = value ?? "";
+                SelectionStart = Math.Min(SelectionStart, _text.Length);
+                SelectionLength = Math.Min(SelectionLength, Math.Max(0, _text.Length - SelectionStart));
+            }
+        }
+        public int SelectionStart
+        {
+            get => _selectionStart;
+            set => _selectionStart = Math.Clamp(value, 0, TextLength);
+        }
+        public int SelectionLength
+        {
+            get => _selectionLength;
+            set => _selectionLength = Math.Clamp(value, 0, Math.Max(0, TextLength - SelectionStart));
+        }
         public string SelectedText { get; set; } = "";
         public int MaxLength { get; set; } = int.MaxValue;
         public int TextLength => Text?.Length ?? 0;
         public bool UseSystemPasswordChar { get; set; }
-        public bool Visible { get; set; }
+        public bool Visible
+        {
+            get => _visible;
+            set
+            {
+                if (_visible == value) return;
+
+                _visible = value;
+                if (!_visible && Focused)
+                {
+                    Focused = false;
+                    OnLostFocus(EventArgs.Empty);
+                }
+            }
+        }
         public Point Location { get; set; }
         public Size Size { get; set; }
         public Size ClientSize { get; set; }
@@ -453,23 +488,71 @@ namespace System.Windows.Forms
         public bool AcceptsTab { get; set; }
         public object Cursor { get; set; }
         public bool IsDisposed => _disposed;
+        public bool Focused { get; private set; }
 
         public void DrawToBitmap(Bitmap bitmap, Rectangle targetBounds)
         {
-            if (bitmap?.PixelBuffer == IntPtr.Zero || string.IsNullOrEmpty(Text)) return;
+            if (bitmap?.PixelBuffer == IntPtr.Zero) return;
+
+            Color background = BackColor.IsEmpty ? Color.Transparent : BackColor;
+            FillRectangle(bitmap, targetBounds, background);
+
             string displayText = UseSystemPasswordChar ? new string('*', Text.Length) : Text;
             var font = Font as System.Drawing.Font ?? new System.Drawing.Font("Liberation Sans", 9f);
-            TextRenderer.DrawText(null, displayText, font,
-                new Rectangle(2, 0, targetBounds.Width, targetBounds.Height),
-                ForeColor.IsEmpty ? Color.White : ForeColor,
-                TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.NoPadding,
-                bitmap);
+            Color textColor = ForeColor.IsEmpty ? Color.White : ForeColor;
+            const int padding = 2;
+            Rectangle textBounds = new Rectangle(padding, 0, Math.Max(0, targetBounds.Width - padding), targetBounds.Height);
+
+            if (SelectionLength > 0 && !string.IsNullOrEmpty(displayText))
+            {
+                int selectionStart = Math.Clamp(SelectionStart, 0, displayText.Length);
+                int selectionLength = Math.Clamp(SelectionLength, 0, displayText.Length - selectionStart);
+                string prefix = displayText.Substring(0, selectionStart);
+                string selected = displayText.Substring(selectionStart, selectionLength);
+                string suffix = displayText.Substring(selectionStart + selectionLength);
+
+                int prefixWidth = TextRenderer.MeasureText(prefix, font).Width;
+                int selectedWidth = TextRenderer.MeasureText(selected, font).Width;
+                Rectangle selectionBounds = new Rectangle(
+                    padding + prefixWidth,
+                    1,
+                    Math.Min(selectedWidth, Math.Max(0, targetBounds.Width - (padding + prefixWidth))),
+                    Math.Max(0, targetBounds.Height - 2));
+
+                FillRectangle(bitmap, selectionBounds, Color.FromArgb(180, 45, 98, 180));
+
+                DrawSegment(bitmap, prefix, font, textColor, padding, targetBounds);
+                DrawSegment(bitmap, selected, font, Color.White, padding + prefixWidth, targetBounds);
+                DrawSegment(bitmap, suffix, font, textColor, padding + prefixWidth + selectedWidth, targetBounds);
+            }
+            else if (!string.IsNullOrEmpty(displayText))
+            {
+                DrawSegment(bitmap, displayText, font, textColor, padding, targetBounds);
+            }
+
+            if (!Focused || SelectionLength > 0 || (Environment.TickCount64 / 500 % 2 != 0))
+                return;
+
+            int caretX = padding + TextRenderer.MeasureText(displayText.Substring(0, Math.Clamp(SelectionStart, 0, displayText.Length)), font).Width;
+            Rectangle caretBounds = new Rectangle(
+                Math.Min(caretX, Math.Max(0, targetBounds.Width - 1)),
+                2,
+                1,
+                Math.Max(0, targetBounds.Height - 4));
+
+            FillRectangle(bitmap, caretBounds, textColor);
         }
         public void SuspendLayout() { }
         public void ResumeLayout() { }
 
         public void SelectAll() { SelectionStart = 0; SelectionLength = Text?.Length ?? 0; }
-        public void Focus() { GotFocus?.Invoke(this, EventArgs.Empty); }
+        public void Focus()
+        {
+            if (Focused) return;
+
+            Focused = true;
+            OnGotFocus(EventArgs.Empty);
+        }
         public void Select(int start, int length) { SelectionStart = start; SelectionLength = length; }
         public void Paste(string text)
         {
@@ -614,6 +697,47 @@ namespace System.Windows.Forms
         public event MouseEventHandler MouseUp;
         public event MouseEventHandler MouseMove;
         public event MouseEventHandler MouseWheel;
+
+        private static void DrawSegment(Bitmap bitmap, string text, System.Drawing.Font font, Color color, int x, Rectangle targetBounds)
+        {
+            if (string.IsNullOrEmpty(text) || x >= targetBounds.Width)
+                return;
+
+            TextRenderer.DrawText(
+                null,
+                text,
+                font,
+                new Rectangle(x, 0, Math.Max(0, targetBounds.Width - x), targetBounds.Height),
+                color,
+                TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.NoPadding,
+                bitmap);
+        }
+
+        private static unsafe void FillRectangle(Bitmap bitmap, Rectangle bounds, Color color)
+        {
+            if (bitmap?.PixelBuffer == IntPtr.Zero) return;
+
+            int left = Math.Max(0, bounds.Left);
+            int top = Math.Max(0, bounds.Top);
+            int right = Math.Min(bitmap.Width, bounds.Right);
+            int bottom = Math.Min(bitmap.Height, bounds.Bottom);
+
+            if (left >= right || top >= bottom) return;
+
+            byte* pixels = (byte*)bitmap.PixelBuffer;
+            for (int y = top; y < bottom; y++)
+            {
+                byte* row = pixels + y * bitmap.Pitch + left * 4;
+                for (int x = left; x < right; x++)
+                {
+                    row[0] = color.B;
+                    row[1] = color.G;
+                    row[2] = color.R;
+                    row[3] = color.A;
+                    row += 4;
+                }
+            }
+        }
     }
 
     public delegate void KeyEventHandler(object sender, KeyEventArgs e);

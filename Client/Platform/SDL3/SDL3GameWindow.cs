@@ -104,7 +104,7 @@ namespace Client.Platform.SDL3
         {
             _title = title ?? "Zircon";
 
-            int initResult = SDL3Native.SDL_Init(SDL3Native.SDL_INIT_VIDEO);
+            int initResult = SDL3Native.SDL_Init(SDL3Native.SDL_INIT_VIDEO | SDL3Native.SDL_INIT_EVENTS);
             if (initResult < 0)
                 throw new InvalidOperationException($"SDL_Init failed: {SDL3Native.GetError()}");
 
@@ -114,7 +114,8 @@ namespace Client.Platform.SDL3
             SDL3Native.SDL_GL_SetAttribute(SDL3Native.SDL_GL_CONTEXT_PROFILE_MASK, SDL3Native.SDL_GL_CONTEXT_PROFILE_CORE);
             SDL3Native.SDL_GL_SetAttribute(SDL3Native.SDL_GL_DOUBLEBUFFER, 1);
 
-            ulong windowFlags = SDL3Native.SDL_WINDOW_OPENGL | SDL3Native.SDL_WINDOW_RESIZABLE;
+            ulong windowFlags = SDL3Native.SDL_WINDOW_OPENGL |
+                                SDL3Native.SDL_WINDOW_RESIZABLE;
 
             _window = SDL3Native.SDL_CreateWindow(_title, width, height, windowFlags);
             if (_window == nint.Zero)

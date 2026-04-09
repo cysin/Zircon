@@ -52,6 +52,7 @@ namespace Client
 
                 CEnvir.LibraryList[pair.Key] = new MirLibrary(path);
             }
+            Console.WriteLine($"[INIT] Loaded {CEnvir.LibraryList.Count} / {Libraries.LibraryList.Count} libraries");
 
             CEnvir.Init(args);
 

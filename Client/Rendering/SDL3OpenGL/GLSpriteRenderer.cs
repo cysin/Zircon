@@ -66,11 +66,13 @@ namespace Client.Rendering.SDL3OpenGL
         /// <summary>
         /// Draws a textured quad with the default sprite shader.
         /// </summary>
+        public uint WhitePixelId { get; set; }
+
         public void Draw(uint textureId, int texWidth, int texHeight,
                          RectangleF destination, RectangleF? source,
                          Color color, Matrix3x2 transform,
                          BlendMode blendMode, float opacity, float blendRate,
-                         Size viewportSize)
+                         Size viewportSize, bool flipV = false)
         {
             if (_spriteProgram == null)
                 return;
@@ -81,10 +83,10 @@ namespace Client.Rendering.SDL3OpenGL
             SetProjectionMatrix(_spriteProgram, _uMatrix, transform, viewportSize);
 
             GL.glActiveTexture(0x84C0); // GL_TEXTURE0
-            GL.glBindTexture(GL.GL_TEXTURE_2D, textureId);
+            GL.glBindTexture(GL.GL_TEXTURE_2D, textureId == 0 ? WhitePixelId : textureId);
             _spriteProgram.SetUniform(_uTexture, 0);
 
-            UploadQuad(destination, source, texWidth, texHeight, color, opacity, 0f, false);
+            UploadQuad(destination, source, texWidth, texHeight, color, opacity, 0f, false, flipV);
             GL.glDrawArrays(GL.GL_TRIANGLE_STRIP, 0, 4);
         }
 
@@ -496,7 +498,8 @@ namespace Client.Rendering.SDL3OpenGL
         private unsafe void UploadQuad(RectangleF destination, RectangleF? source,
                                         int texWidth, int texHeight,
                                         Color color, float opacity,
-                                        float geometryExpand, bool expandUvs)
+                                        float geometryExpand, bool expandUvs,
+                                        bool flipV = false)
         {
             float left = destination.Left;
             float right = destination.Right;
@@ -510,6 +513,15 @@ namespace Client.Rendering.SDL3OpenGL
                 v1 = source.Value.Top / (float)texHeight;
                 u2 = source.Value.Right / (float)texWidth;
                 v2 = source.Value.Bottom / (float)texHeight;
+            }
+
+            // FBO textures in OpenGL are Y-flipped: V=0 is bottom, V=1 is top.
+            // Flip V coordinates to sample correctly.
+            if (flipV)
+            {
+                float tmp = v1;
+                v1 = 1f - v2;
+                v2 = 1f - tmp;
             }
 
             if (geometryExpand > 0f)

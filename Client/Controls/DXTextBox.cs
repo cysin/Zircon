@@ -330,8 +330,13 @@ namespace Client.Controls
             if (TextBox.Location != DisplayArea.Location)
                 TextBox.Location = DisplayArea.Location;
 
-            if (TextBox.Visible && CEnvir.Target.ActiveControl != TextBox)
+            if (!TextBox.Visible) return;
+
+            if (CEnvir.Target.ActiveControl != TextBox)
                 CEnvir.Target.ActiveControl = TextBox;
+
+            TextBox.Focus();
+            TextureValid = false;
         }
         public virtual void OnDeactivated()
         {
@@ -467,6 +472,15 @@ namespace Client.Controls
                 return;
             }
 
+#if !WINDOWS
+            bool caretVisible = TextBox.Visible && TextBox.Focused && TextBox.SelectionLength == 0 && (Environment.TickCount64 / 500 % 2 == 0);
+            if (_lastCaretVisible != caretVisible)
+            {
+                _lastCaretVisible = caretVisible;
+                TextureValid = false;
+            }
+#endif
+
             if (!TextureValid)
             {
                 CreateTexture();
@@ -482,6 +496,10 @@ namespace Client.Controls
 
             ExpireTime = CEnvir.Now + Config.CacheDuration;
         }
+
+#if !WINDOWS
+        private bool _lastCaretVisible;
+#endif
         #endregion
 
         #region IDisposable
@@ -698,6 +716,14 @@ namespace Client.Controls
                     PreviousTextBox();
                 else
                     NextTextBox();
+            }
+            public bool HandleTabNavigation(bool shift)
+            {
+                if (AcceptsTab) return false;
+
+                var args = new PreviewKeyDownEventArgs(Keys.Tab, Keys.Tab | (shift ? Keys.Shift : Keys.None));
+                OnPreviewKeyDown(args);
+                return true;
             }
             protected override void OnTextChanged(EventArgs e)
             {
