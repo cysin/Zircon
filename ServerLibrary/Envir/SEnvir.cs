@@ -3152,6 +3152,10 @@ namespace Server.Envir
             account.CreationIP = con.IPAddress;
             account.CreationDate = Now;
 
+            // On a test server, skip email activation so the registration→login flow is usable.
+            if (Config.TestServer)
+                account.Activated = true;
+
             if (refferal != null)
             {
                 int maxLevel = refferal.HighestLevel();

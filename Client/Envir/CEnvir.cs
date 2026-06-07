@@ -153,6 +153,7 @@ namespace Client.Envir
         public static void GameLoop()
         {
             UpdateGame();
+            AutoTest.Tick();
             RenderGame();
 
             if (Config.LimitFPS)

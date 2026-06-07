@@ -141,17 +141,73 @@ Zircon/
 - `LoginBox` location recalculated after library images load
 - `DXTextBox.UpdateDisplayArea` falls back to `base.Size` when `TextBox.Size` is zero
 
+## Verified Working (2026-06 — Linux, locally-built SDL3 3.2.31 + SDL3_ttf 3.2.3)
+
+The SDL3 + OpenGL rendering pipeline has been validated end-to-end on Linux by running
+the client against a local server with full game data:
+
+- **FBO render-to-texture works correctly.** Window frames, dialog boxes, buttons, and
+  control textures all render. The earlier "FBO content invisible" report was a
+  **measurement artifact** of the `ZIRCON_DUMP_FRAME` diagnostic (it latched
+  `_frameDumped` on the *first* eligible frame, which was a stale/early frame before the
+  UI had drawn). `glReadPixels` of the live back buffer shows all FBO content present.
+- **The login screen renders fully** — background (DXT1/DXT5), "Legend of MIR III" logo,
+  the "Loading client information" dialog, and the bottom login form (ID/Password fields,
+  Log In / Exit / New Account / Change Password buttons, Rankings/Options tabs) — all with
+  SDL3_ttf text.
+- **Colour palette loads** via the new `Client/Platform/PngDecoder.cs` (System.Drawing GDI+
+  is unavailable on non-Windows .NET, so `Data/Pallete.png` is decoded with a dependency-free
+  decoder — verified byte-for-byte against PIL).
+
+### Full flow validated: register → login → character select → create → in-game
+
+The entire flow has been driven end-to-end on Linux (via the `ZIRCON_AUTOTEST` harness in
+`Client/AutoTest.cs`) with screenshots at each stage. The in-game world renders: terrain,
+player, monsters, minimap, and HUD. Requirements discovered:
+
+- **Client needs `Map/` symlinked** into its output dir (alongside `Data/`, `Sound/`). Without
+  it the terrain renders black (UI/minimap/sprites still draw). The server needs `Map/` too.
+- **Server `[Control] AllowStartGame=True`** must be set in `Server.ini` — it defaults to
+  `false`, so "Start Game" silently returns `Disabled` and the client never enters the world.
+- **Test-server convenience**: new accounts are auto-activated when `TestServer=True`
+  (`SEnvir.NewAccount`), since SMTP activation email isn't available.
+
+Known in-game issue: **object name labels render vertically flipped** (player/monster names) —
+the GameScene world render-to-texture path needs the same V-flip handling as other FBO draws.
+UI labels (HUD, dialogs) render correctly.
+
+### Clicking a text box now focuses it
+
+`DXTextBox.OnMouseDown` previously only set focus under `#if WINDOWS` (via Win32 messages), so
+on Linux clicking a field (e.g. the password box) did nothing and typing went to the wrong
+field. Fixed: a left-click now makes the box the active text box on non-Windows.
+
+### IMPORTANT: apply the data patches
+
+The base `Client.7z` ships **outdated** `.Zl` libraries. The unpatched `Interface.Zl` has
+only 190 images and is **missing index 151** (the login-dialog background), so the login form
+gets `Size = {0,0}` and does not draw. The patched `Interface.Zl` (from
+`patch/Data-Interface.Zl.gz`) has 295 images and fixes this. **You must apply the patches**
+(see "Applying Patches" above) — a blank login form is almost always missing/outdated data,
+not a rendering bug.
+
 ## Known Remaining Issues
 
-### Critical (blocks gameplay)
+### Functional gaps
 
-1. **FBO render-to-texture content may be invisible** — The FBO Y-flip fix has been implemented but needs testing. Window frame borders, dialog boxes, and control textures rendered via FBOs may still appear blank. The root cause was that OpenGL FBO textures store content Y-flipped relative to the sampling UVs. The fix flips V coordinates when drawing FBO-backed textures.
+1. **Audio not implemented** — `SDL3SoundManager` is a stub, and on Linux the active path is the
+   `DXSoundManager` compat stub (no-ops). The game's sounds are WAV files, so a pure-SDL3
+   `SDL_LoadWAV` + `SDL_AudioStream` backend is feasible without SDL3_mixer. The shared
+   `SoundIndex`→file mapping (~1000 entries) lives in the Windows-only `DXSoundManager.cs`;
+   porting cleanly means making that mapping cross-platform and abstracting only the
+   DirectSound playback primitive behind `#if WINDOWS`.
 
-2. **Audio not implemented** — `SDL3SoundManager` is a stub. Needs SDL3_mixer or SDL3_sound integration for WAV/MP3 playback. The system has `libSDL3_sound.so` installed.
+2. **Text input polish** — Character input and basic editing work via the compat `TextBox`.
+   IME, multi-line editing, and selection rendering need more work. Some body text shows minor
+   glyph artifacts (e.g. an ellipsis rendering oddly).
 
-3. **Text input in DXTextBox partially working** — Character input and basic editing (backspace, delete, arrows) work via the compat TextBox. But the visual rendering of text in text boxes depends on `TextBox.DrawToBitmap` which needs the pixel buffer to be correctly passed through. The `DrawToBitmap` implementation renders text via SDL3_ttf but may not work in all cases.
-
-4. **66 missing library files** — 5 of 314 `.Zl` library files are not available in the mirfiles.com patch set. These are non-critical (store items, minimap2, some magic effects).
+3. **Missing library files** — A handful of `.Zl` files are not in the mirfiles.com patch set
+   (store items, minimap2, some magic effects). Non-critical.
 
 ### Non-Critical
 
@@ -230,10 +286,32 @@ cp Database/System.db ServerCore/bin/Release/Database/System.db
 - SDL3_ttf (`libSDL3_ttf.so`) — font rendering
 - A system TTF font (Liberation Sans, Noto Sans, or DejaVu Sans)
 
-On Fedora:
+On Fedora 40+:
 ```bash
 sudo dnf install dotnet-sdk-8.0 SDL3-devel SDL3_ttf-devel liberation-sans-fonts
 ```
+
+On distros without an SDL3 package (e.g. Fedora 39), build SDL3 + SDL3_ttf from source into a
+local prefix and point the runtime at it via `LD_LIBRARY_PATH`:
+```bash
+git clone --depth 1 -b release-3.2.x https://github.com/libsdl-org/SDL.git
+cmake -S SDL -B SDL/build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX="$PWD/prefix" -DSDL_SHARED=ON -DSDL_STATIC=OFF
+ninja -C SDL/build install
+git clone --depth 1 -b release-3.2.x https://github.com/libsdl-org/SDL_ttf.git
+cmake -S SDL_ttf -B SDL_ttf/build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX="$PWD/prefix" -DCMAKE_PREFIX_PATH="$PWD/prefix" \
+  -DSDLTTF_VENDORED=OFF -DSDLTTF_PLUTOSVG=OFF -DBUILD_SHARED_LIBS=ON
+ninja -C SDL_ttf/build install
+```
+Then run the client with `run-client-linux.sh` (sets `LD_LIBRARY_PATH` to the prefix).
+
+### Headless verification
+
+Set `ZIRCON_DUMP_FRAME=/tmp/frame.ppm` to write a PPM screenshot of the back buffer via
+`glReadPixels`. `ZIRCON_DUMP_DELAY=<frames>` waits N eligible frames so lazily-created control
+textures have drawn; `ZIRCON_DUMP_AT=<absolute frame>` dumps a specific frame regardless of
+scene state. Convert with `magick frame.ppm frame.png`.
 
 ### Build Commands
 

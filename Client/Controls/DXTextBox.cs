@@ -324,6 +324,8 @@ namespace Client.Controls
         }
         public virtual void OnActivated()
         {
+            if (TextBox == null) return;
+
             if (TextBox.Visible != Editable)
                 TextBox.Visible = Editable;
 
@@ -340,6 +342,8 @@ namespace Client.Controls
         }
         public virtual void OnDeactivated()
         {
+            if (TextBox == null) return;
+
             if (TextBox.Visible)
                 TextureValid = false;
 
@@ -400,6 +404,12 @@ namespace Client.Controls
                     SendMessage(TextBox.Handle, 0xA4, e.Clicks, location);
                     break;
             }
+#else
+            // On non-Windows there is no real WinForms TextBox to receive a focus message, so
+            // clicking a text box must explicitly make it the active text box (it is the only way
+            // to focus a field other than the initial SetFocus / Tab navigation).
+            if (e.Button == MouseButtons.Left && CanFocus())
+                SetFocus();
 #endif
         }
         public override void OnMouseMove(MouseEventArgs e)
@@ -417,6 +427,16 @@ namespace Client.Controls
         public override void OnMouseUp(MouseEventArgs e)
         {
             base.OnMouseUp(e);
+
+#if !WINDOWS
+            // base.OnMouseUp set FocusControl = null, which clears ActiveTextBox and (via
+            // OnDeactivated) hides the inner TextBox. On non-Windows there is no real WinForms
+            // TextBox to retain focus, so re-assert it here BEFORE the TextBox.Visible guard below —
+            // otherwise clicking a text box focuses it on mouse-down then immediately unfocuses on
+            // mouse-up, and typing goes nowhere.
+            if (e.Button == MouseButtons.Left && CanFocus())
+                SetFocus();
+#endif
 
             if (!TextBox.Visible) return;
 

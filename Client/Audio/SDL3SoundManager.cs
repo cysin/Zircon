@@ -18,8 +18,7 @@ namespace Client.Audio
         {
             if (_initialised) return;
 
-            int result = SDL3Native.SDL_InitSubSystem(SDL3Native.SDL_INIT_AUDIO);
-            if (result < 0)
+            if (!SDL3Native.SDL_InitSubSystem(SDL3Native.SDL_INIT_AUDIO))
             {
                 System.Diagnostics.Debug.WriteLine($"[SDL3SoundManager] SDL audio init failed: {SDL3Native.GetError()}");
                 return;

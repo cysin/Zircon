@@ -515,28 +515,25 @@ namespace Client.Rendering.SDL3OpenGL
             if (!File.Exists(path))
                 return;
 
-            // Use a platform-agnostic approach: decode PNG manually via a small embedded decoder
-            // or fall back to System.Drawing on Windows.  For cross-platform, we upload raw BGRA
-            // data.  As a pragmatic first step, we try System.Drawing.Common (available via NuGet on
-            // all platforms) guarded by a try/catch so the pipeline still initialises without it.
+            // Decode the palette PNG with our dependency-free decoder. System.Drawing.Common (GDI+)
+            // is unavailable on non-Windows .NET, so we cannot rely on System.Drawing.Bitmap here.
+            // PngDecoder yields tightly-packed BGRA, matching the GL_BGRA upload below.
             try
             {
-                using var bmp = new System.Drawing.Bitmap(path);
-                int w = bmp.Width;
-                int h = bmp.Height;
-                var rect = new Rectangle(0, 0, w, h);
-                var data = bmp.LockBits(rect, System.Drawing.Imaging.ImageLockMode.ReadOnly,
-                    System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-
-                _paletteData = new byte[w * h * 4];
-                Marshal.Copy(data.Scan0, _paletteData, 0, _paletteData.Length);
-                bmp.UnlockBits(data);
-
-                _colourPaletteHandle = UploadBgraTexture(w, h, _paletteData);
+                if (Client.Platform.PngDecoder.TryDecode(path, out int w, out int h, out byte[] data) &&
+                    w > 0 && h > 0 && data != null)
+                {
+                    _paletteData = data;
+                    _colourPaletteHandle = UploadBgraTexture(w, h, _paletteData);
+                }
+                else
+                {
+                    Console.WriteLine($"[GLManager] Failed to decode colour palette: {path}");
+                }
             }
-            catch
+            catch (Exception ex)
             {
-                // Palette will be unavailable -- callers should handle this gracefully.
+                Console.WriteLine($"[GLManager] Palette load error: {ex.Message}");
             }
         }
 

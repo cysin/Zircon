@@ -8,7 +8,9 @@ namespace Client.Platform.SDL3
         private const string LibName = "SDL3";
 
         // Init/Quit
-        [DllImport(LibName)] public static extern int SDL_Init(uint flags);
+        // NOTE: SDL3 changed these from SDL2's "int (0 = success)" to "bool (true = success)".
+        // Declaring them as int makes `result < 0` checks silently never fire.
+        [DllImport(LibName)] [return: MarshalAs(UnmanagedType.I1)] public static extern bool SDL_Init(uint flags);
         [DllImport(LibName)] public static extern void SDL_Quit();
 
         // Window
@@ -24,12 +26,12 @@ namespace Client.Platform.SDL3
         [DllImport(LibName)] public static extern nint SDL_GetWindowProperties(nint window);
         [DllImport(LibName)] public static extern bool SDL_GetWindowPosition(nint window, out int x, out int y);
 
-        // GL
-        [DllImport(LibName)] public static extern int SDL_GL_SetAttribute(int attr, int value);
+        // GL (all bool-returning funcs return true on success in SDL3)
+        [DllImport(LibName)] [return: MarshalAs(UnmanagedType.I1)] public static extern bool SDL_GL_SetAttribute(int attr, int value);
         [DllImport(LibName)] public static extern nint SDL_GL_CreateContext(nint window);
-        [DllImport(LibName)] public static extern int SDL_GL_MakeCurrent(nint window, nint context);
-        [DllImport(LibName)] public static extern int SDL_GL_SetSwapInterval(int interval);
-        [DllImport(LibName)] public static extern int SDL_GL_SwapWindow(nint window);
+        [DllImport(LibName)] [return: MarshalAs(UnmanagedType.I1)] public static extern bool SDL_GL_MakeCurrent(nint window, nint context);
+        [DllImport(LibName)] [return: MarshalAs(UnmanagedType.I1)] public static extern bool SDL_GL_SetSwapInterval(int interval);
+        [DllImport(LibName)] [return: MarshalAs(UnmanagedType.I1)] public static extern bool SDL_GL_SwapWindow(nint window);
         [DllImport(LibName)] public static extern void SDL_GL_DestroyContext(nint context);
         [DllImport(LibName)] public static extern nint SDL_GL_GetProcAddress([MarshalAs(UnmanagedType.LPUTF8Str)] string proc);
 
@@ -45,10 +47,10 @@ namespace Client.Platform.SDL3
 
         // Cursor
         [DllImport(LibName)] public static extern nint SDL_CreateSystemCursor(int id);
-        [DllImport(LibName)] public static extern int SDL_SetCursor(nint cursor);
+        [DllImport(LibName)] [return: MarshalAs(UnmanagedType.I1)] public static extern bool SDL_SetCursor(nint cursor);
 
         // Clipboard
-        [DllImport(LibName)] public static extern int SDL_SetClipboardText([MarshalAs(UnmanagedType.LPUTF8Str)] string text);
+        [DllImport(LibName)] [return: MarshalAs(UnmanagedType.I1)] public static extern bool SDL_SetClipboardText([MarshalAs(UnmanagedType.LPUTF8Str)] string text);
         [DllImport(LibName)] public static extern nint SDL_GetClipboardText();
 
         // Text input
@@ -56,7 +58,7 @@ namespace Client.Platform.SDL3
         [DllImport(LibName)] public static extern bool SDL_StopTextInput(nint window);
 
         // Audio
-        [DllImport(LibName)] public static extern int SDL_InitSubSystem(uint flags);
+        [DllImport(LibName)] [return: MarshalAs(UnmanagedType.I1)] public static extern bool SDL_InitSubSystem(uint flags);
 
         // Error
         [DllImport(LibName)] public static extern nint SDL_GetError();

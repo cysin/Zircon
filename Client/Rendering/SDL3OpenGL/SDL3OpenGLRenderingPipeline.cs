@@ -89,7 +89,7 @@ namespace Client.Rendering.SDL3OpenGL
             else
             {
                 // Create our own SDL3 window.
-                if (SDL.SDL_Init(SDL.SDL_INIT_VIDEO | SDL.SDL_INIT_EVENTS) < 0)
+                if (!SDL.SDL_Init(SDL.SDL_INIT_VIDEO | SDL.SDL_INIT_EVENTS))
                     throw new InvalidOperationException($"SDL_Init failed: {SDL.GetError()}");
 
                 SDL.SDL_GL_SetAttribute(SDL.SDL_GL_CONTEXT_MAJOR_VERSION, 3);
@@ -396,7 +396,44 @@ namespace Client.Rendering.SDL3OpenGL
 
                 drawScene();
 
+                // One-shot capture requested by the autotest harness.
+                string capPath = CaptureRequestPath;
+                if (!string.IsNullOrEmpty(capPath))
+                {
+                    Size sz = _windowPixelSize.IsEmpty ? GetBackBufferSize() : _windowPixelSize;
+                    byte[] all = new byte[sz.Width * sz.Height * 4];
+                    var gh = GCHandle.Alloc(all, GCHandleType.Pinned);
+                    GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, 0);
+                    GL.glReadPixels(0, 0, sz.Width, sz.Height, GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, gh.AddrOfPinnedObject());
+                    gh.Free();
+                    WritePpm(capPath, all, sz);
+                    CaptureRequestPath = null;
+                    Console.WriteLine($"[GL] Captured frame to {capPath}");
+                    Console.Out.Flush();
+                }
+
                 _drawDiagFrame++;
+                // Optional: dump a specific absolute frame number (set ZIRCON_DUMP_AT). Useful for
+                // capturing a chosen point in the UI flow regardless of scene state.
+                if (!_absDumpDone)
+                {
+                    string atEnv = Environment.GetEnvironmentVariable("ZIRCON_DUMP_AT");
+                    string atPath = Environment.GetEnvironmentVariable("ZIRCON_DUMP_FRAME");
+                    if (!string.IsNullOrWhiteSpace(atEnv) && !string.IsNullOrWhiteSpace(atPath) &&
+                        int.TryParse(atEnv, out int atTarget) && _drawDiagFrame >= atTarget)
+                    {
+                        Size sz = _windowPixelSize.IsEmpty ? GetBackBufferSize() : _windowPixelSize;
+                        byte[] all = new byte[sz.Width * sz.Height * 4];
+                        var gh = GCHandle.Alloc(all, GCHandleType.Pinned);
+                        GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, 0);
+                        GL.glReadPixels(0, 0, sz.Width, sz.Height, GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, gh.AddrOfPinnedObject());
+                        gh.Free();
+                        WritePpm(atPath, all, sz);
+                        _absDumpDone = true;
+                        _frameDumped = true;
+                        Console.WriteLine($"[GL] Dumped frame {_drawDiagFrame} to {atPath}");
+                    }
+                }
                 TryDumpFrame();
                 SDL.SDL_GL_SwapWindow(_window);
                 return true;
@@ -612,6 +649,14 @@ namespace Client.Rendering.SDL3OpenGL
 
         private static int _drawDiagFrame;
         private bool _frameDumped;
+        private bool _absDumpDone;
+        private int _dumpEligibleFrames;
+
+        /// <summary>
+        /// Set to a file path to request a one-shot back-buffer capture (PPM) on the next rendered
+        /// frame; cleared once written. Used by the headless autotest harness.
+        /// </summary>
+        public static volatile string CaptureRequestPath;
         public void DrawTexture(RenderTexture texture, Rectangle sourceRectangle, RectangleF destinationRectangle, Color colour)
         {
             if (!texture.IsValid || _renderer == null)
@@ -1031,6 +1076,16 @@ namespace Client.Rendering.SDL3OpenGL
                 return;
 
             if (DXControl.ActiveScene is Client.Scenes.LoginScene loginScene && !loginScene.LoginBox.Visible)
+                return;
+
+            // Let the UI settle for a number of frames after it first becomes eligible, so
+            // lazily-created control textures (FBO-backed windows, labels) have rendered.
+            // Override the delay with ZIRCON_DUMP_DELAY (frames); default 120.
+            int dumpDelay = 120;
+            string delayEnv = Environment.GetEnvironmentVariable("ZIRCON_DUMP_DELAY");
+            if (!string.IsNullOrWhiteSpace(delayEnv) && int.TryParse(delayEnv, out int parsedDelay) && parsedDelay >= 0)
+                dumpDelay = parsedDelay;
+            if (_dumpEligibleFrames++ < dumpDelay)
                 return;
 
             Size size = _windowPixelSize.IsEmpty ? _manager?.GetBackBufferSize() ?? Config.GameSize : _windowPixelSize;

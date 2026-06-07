@@ -104,8 +104,7 @@ namespace Client.Platform.SDL3
         {
             _title = title ?? "Zircon";
 
-            int initResult = SDL3Native.SDL_Init(SDL3Native.SDL_INIT_VIDEO | SDL3Native.SDL_INIT_EVENTS);
-            if (initResult < 0)
+            if (!SDL3Native.SDL_Init(SDL3Native.SDL_INIT_VIDEO | SDL3Native.SDL_INIT_EVENTS))
                 throw new InvalidOperationException($"SDL_Init failed: {SDL3Native.GetError()}");
 
             // Set OpenGL attributes before creating the window
