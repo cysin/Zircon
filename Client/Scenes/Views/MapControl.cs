@@ -149,6 +149,7 @@ namespace Client.Scenes.Views
 
         public MouseButtons MapButtons;
         public Point MapLocation;
+        private static readonly bool _logInput = !string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("ZIRCON_INPUTLOG"));
 
         public bool Mining;
         public Point MiningPoint;
@@ -895,6 +896,9 @@ namespace Client.Scenes.Views
                 Run(direction);
                 return;
             }
+
+            if (_logInput && MapButtons != 0)
+                System.Console.WriteLine($"[INPUTLOG] ProcessInput MouseControl==this={MouseControl == this} MapButtons={MapButtons} MoveFrame={GameScene.Game.MoveFrame} mapLoc={MapLocation} userLoc={MapObject.User?.CurrentLocation} nextAction<=now={CEnvir.Now >= MapObject.User?.NextActionTime} queue={MapObject.User?.ActionQueue.Count} mouseObj={(MapObject.MouseObject == null ? "null" : MapObject.MouseObject.Race.ToString())} canMove={CanMove(MouseDirection(), 1)}");
 
             if (MouseControl == this)
             {

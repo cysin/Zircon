@@ -24,7 +24,9 @@ namespace Client
         private const string CharacterName = "AutoHero";
         private const string ShotDir = "/tmp/zircon_autotest";
 
-        private enum Stage { Idle, Login, AwaitSelect, CreateChar, AwaitChar, StartGame, AwaitGame, Done }
+        private enum Stage { Idle, Login, AwaitSelect, CreateChar, AwaitChar, StartGame, AwaitGame, Done, WalkTest }
+        private static int _walkTicks;
+        private static System.Drawing.Point _walkStart;
 
         private static bool _enabled;
         private static bool _checked;
@@ -180,6 +182,15 @@ namespace Client
                 case Stage.AwaitGame:
                     if (DXControl.ActiveScene is GameScene && GameScene.Game != null)
                     {
+                        if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ZIRCON_WALKTEST")))
+                        {
+                            Log("IN GAME — starting walk test (holding left button toward up-left).");
+                            _walkTicks = 0;
+                            _walkStart = Client.Models.MapObject.User?.CurrentLocation ?? System.Drawing.Point.Empty;
+                            _stage = Stage.WalkTest;
+                            Wait(0);
+                            break;
+                        }
                         Log("IN GAME. Waiting for world to load, then capturing.");
                         _stage = Stage.Done;
                         Capture("04_ingame");
@@ -192,7 +203,38 @@ namespace Client
                     }
                     break;
 
+                case Stage.WalkTest:
+                {
+                    var gs = DXControl.ActiveScene as GameScene;
+                    if (gs?.MapControl == null) { _enabled = false; Log("WALKTEST: no map"); break; }
+                    // Hold the left button over a point up-left of the player so ProcessInput keeps
+                    // issuing move actions; UpdateGame's per-frame OnMouseMove keeps MouseControl on
+                    // the map via CEnvir.MouseLocation.
+                    // Sweep the target a little each second so we don't get stuck pointing at a
+                    // monster (clicking a monster targets it instead of moving).
+                    var targets = new[] { new System.Drawing.Point(512, 150), new System.Drawing.Point(850, 384), new System.Drawing.Point(512, 620), new System.Drawing.Point(180, 384) };
+                    CEnvir.MouseLocation = targets[(_walkTicks / 45) % targets.Length];
+                    gs.MapControl.MapButtons |= System.Windows.Forms.MouseButtons.Left;
+                    if (_walkTicks % 15 == 0)
+                        Log($"WALKTEST: frame {_walkTicks} user={Client.Models.MapObject.User?.CurrentLocation} mouseTgt={CEnvir.MouseLocation} mapLoc={gs.MapControl.MapLocation} mouseObj={(Client.Models.MapObject.MouseObject == null ? "null" : Client.Models.MapObject.MouseObject.Race.ToString())}");
+                    if (++_walkTicks >= 180)
+                    {
+                        gs.MapControl.MapButtons &= ~System.Windows.Forms.MouseButtons.Left;
+                        Log($"WALKTEST: done. start={_walkStart} end={Client.Models.MapObject.User?.CurrentLocation} (changed={_walkStart != (Client.Models.MapObject.User?.CurrentLocation ?? System.Drawing.Point.Empty)})");
+                        Capture("06_walktest");
+                        _enabled = false;
+                    }
+                    break;
+                }
+
                 case Stage.Done:
+                    if (DXControl.ActiveScene is GameScene gsDiag && GameScene.Game != null &&
+                        !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ZIRCON_INGAMEDIAG")) && _pendingShot == null)
+                    {
+                        RunInGameDiag(gsDiag);
+                        _enabled = false;
+                        break;
+                    }
                     // Final shot after the world has settled, then stop acting.
                     if (DXControl.ActiveScene is GameScene && GameScene.Game != null && _pendingShot == null)
                     {
@@ -207,6 +249,29 @@ namespace Client
                     }
                     break;
             }
+        }
+
+        /// <summary>
+        /// Diagnoses in-game mouse input: simulates a mouse move + left button down over the map and
+        /// reports whether the MapControl becomes the MouseControl and receives the button (movement
+        /// requires MouseControl == MapControl in MapControl.ProcessInput).
+        /// </summary>
+        private static void RunInGameDiag(GameScene gs)
+        {
+            var map = gs.MapControl;
+            if (map == null) { Log("INGAMEDIAG: MapControl is null"); return; }
+
+            Log($"INGAMEDIAG: MapControl IsControl={map.IsControl} PassThrough={map.PassThrough} IsVisible={map.IsVisible} Enabled={map.Enabled} DisplayArea={map.DisplayArea}");
+            Log($"INGAMEDIAG: scene children={gs.Controls.Count}; user={Client.Models.MapObject.User?.CurrentLocation}");
+
+            int mx = 412, my = 284; // a point on the open map, away from HUD/minimap
+            CEnvir.MouseLocation = new System.Drawing.Point(mx, my);
+            gs.OnMouseMove(new System.Windows.Forms.MouseEventArgs(System.Windows.Forms.MouseButtons.None, 0, mx, my, 0));
+            var mc = DXControl.MouseControl;
+            Log($"INGAMEDIAG: after mousemove({mx},{my}) MouseControl={(mc == null ? "null" : mc.GetType().Name)} ==MapControl? {ReferenceEquals(mc, map)}");
+
+            gs.OnMouseDown(new System.Windows.Forms.MouseEventArgs(System.Windows.Forms.MouseButtons.Left, 1, mx, my, 0));
+            Log($"INGAMEDIAG: after mousedown MapButtons={map.MapButtons} MapLocation={map.MapLocation} MouseControl==MapControl? {ReferenceEquals(DXControl.MouseControl, map)}");
         }
     }
 }
